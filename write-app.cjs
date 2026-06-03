@@ -7,9 +7,31 @@ const tod = () => new Date().toLocaleDateString("ar-SA");
 const AVBG = [["#E8F5E9","#2E7D32"],["#E3F2FD","#1565C0"],["#FFF3E0","#E65100"],["#F3E5F5","#6A1B9A"],["#FCE4EC","#880E4F"],["#E0F7FA","#00695C"]];
 const G="#0F6E56",GM="#1D9E75",GL="#E1F5EE",GD="#085041",sf="#fff",bg="#F5F7F6",bd="#E2EAE7";
 
+// ══ ROLES ══
+const ROLES = {
+  superadmin: { label:"Super Admin", icon:"👑", color:"#E65100", bg:"#FFF3E0" },
+  admin:      { label:"مدير",        icon:"🔑", color:"#1565C0", bg:"#E3F2FD" },
+  accountant: { label:"محاسب",      icon:"💼", color:"#6A1B9A", bg:"#F3E5F5" },
+  member:     { label:"عضو",        icon:"👤", color:"#2E7D32", bg:"#E8F5E9" }
+};
+
+const canDo = (user, action) => {
+  const r = user?.role;
+  switch(action) {
+    case "reset":         return r === "superadmin";
+    case "manage_users":  return r === "superadmin";
+    case "rounds":        return ["superadmin","admin"].includes(r);
+    case "members_write": return ["superadmin","admin"].includes(r);
+    case "pays_write":    return ["superadmin","admin","accountant"].includes(r);
+    case "view_all":      return ["superadmin","admin","accountant"].includes(r);
+    default: return false;
+  }
+};
+
 function buildShareLink(rid,token){return window.location.href.split("?")[0]+"?view=round&rid="+rid+"&token="+token;}
 function parseShareParams(){const p=new URLSearchParams(window.location.search);if(p.get("view")==="round")return{rid:p.get("rid"),token:p.get("token")};return null;}
 
+// ══ PUBLIC ROUND VIEW ══
 function PublicRoundView({state}){
   const params=parseShareParams();
   if(!params)return null;
@@ -18,7 +40,7 @@ function PublicRoundView({state}){
     <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}}>
       <div style={{color:"#fff",textAlign:"center"}}><div style={{fontSize:48}}>🔒</div><div style={{fontSize:20,marginTop:16}}>رابط غير صحيح</div></div>
     </div>);
-  const totalPot=round.pays.reduce((s,p)=>s+p.amt,0);
+  const totalPot=round.pays.reduce((s,p)=>s+Number(p.amt),0);
   const paidCount=round.pays.filter(p=>p.paid).length;
   return(
     <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",fontFamily:"Tajawal,sans-serif",padding:24}}>
@@ -56,7 +78,7 @@ function PublicRoundView({state}){
               <div style={{width:38,height:38,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13}}>{ini(pay.member_name||"")}</div>
               <div style={{flex:1}}>
                 <div style={{color:"#fff",fontSize:14,fontWeight:700}}>{pay.member_name} {round.winner_id===pay.member_id?"🏆":""}</div>
-                <div style={{color:"rgba(255,255,255,.4)",fontSize:12}}>{pay.amt.toLocaleString()} ر.س</div>
+                <div style={{color:"rgba(255,255,255,.4)",fontSize:12}}>{Number(pay.amt).toLocaleString()} ر.س</div>
               </div>
               <span style={{fontSize:12,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓ دفع":"⏳ لم يدفع"}</span>
             </div>))}
@@ -66,11 +88,9 @@ function PublicRoundView({state}){
     </div>);
 }
 
+// ══ LOGIN ══
 function LoginScreen({onLogin}){
-  const [phone,setPhone]=useState("");
-  const [pin,setPin]=useState("");
-  const [err,setErr]=useState("");
-  const [loading,setLoading]=useState(false);
+  const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);
   async function handleLogin(){
     setLoading(true);setErr("");
     const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();
@@ -96,12 +116,55 @@ function LoginScreen({onLogin}){
           </div>
           {err&&<div style={{background:"#FCE4EC",color:"#880E4F",borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:16,textAlign:"center"}}>{err}</div>}
           <button onClick={handleLogin} disabled={loading} style={{width:"100%",padding:13,borderRadius:12,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",color:"#fff",fontSize:16,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{loading?"جاري التحقق...":"تسجيل الدخول"}</button>
-          <div style={{marginTop:16,textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:11}}>المدير: 0500000000 · PIN: 1234</div>
         </div>
       </div>
     </div>);
 }
 
+// ══ RESET MODAL ══
+function ResetModal({onClose,onReset}){
+  const [selected,setSelected]=useState(null);
+  const options=[
+    {id:"winners",  label:"إعادة تعيين الفائزين",     icon:"🔄", desc:"يمسح won_round فقط — البيانات تبقى",      color:"#E3F2FD",tc:"#1565C0"},
+    {id:"rounds",   label:"Reset الجولات والمدفوعات", icon:"🗑️", desc:"يحذف الجولات ويبدأ من #1",               color:"#FFF3E0",tc:"#E65100"},
+    {id:"history",  label:"Reset سجل المعاملات",      icon:"📋", desc:"يمسح سجل المعاملات فقط",                 color:"#F3E5F5",tc:"#6A1B9A"},
+    {id:"members",  label:"Reset الأعضاء",            icon:"👥", desc:"يحذف كل الأعضاء",                        color:"#FCE4EC",tc:"#880E4F"},
+    {id:"full",     label:"Reset كامل للنظام",        icon:"⚠️", desc:"يمسح كل شيء ويبدأ من الصفر",            color:"#FFEBEE",tc:"#C62828"},
+  ];
+  function handleReset(){
+    if(!selected)return;
+    const op=options.find(o=>o.id===selected);
+    if(window.confirm("هل أنت متأكد من " + op.label + "؟ لا يمكن التراجع عن هذا الإجراء."))
+      onReset(selected);
+  }
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}} dir="rtl">
+      <div style={{background:sf,borderRadius:20,padding:28,width:460,maxWidth:"95vw",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <h3 style={{fontSize:18,fontWeight:800,margin:0,color:"#C62828"}}>⚠️ إعادة تعيين النظام</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#5A7A72"}}>×</button>
+        </div>
+        <p style={{fontSize:13,color:"#5A7A72",marginBottom:16}}>اختر العملية التي تريد تنفيذها. هذه العمليات لا يمكن التراجع عنها.</p>
+        {options.map(o=>(
+          <div key={o.id} onClick={()=>setSelected(o.id)} style={{border:"2px solid "+(selected===o.id?"#C62828":bd),borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",background:selected===o.id?o.color:"transparent",transition:"all .15s"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>{o.icon}</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:14,color:selected===o.id?o.tc:"#1A2E28"}}>{o.label}</div>
+                <div style={{fontSize:12,color:"#5A7A72",marginTop:2}}>{o.desc}</div>
+              </div>
+              {selected===o.id&&<span style={{color:"#C62828",fontSize:18}}>✓</span>}
+            </div>
+          </div>))}
+        <div style={{display:"flex",gap:10,marginTop:16}}>
+          <button onClick={handleReset} disabled={!selected} style={{flex:1,padding:11,borderRadius:10,background:selected?"#C62828":"#ccc",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:selected?"pointer":"not-allowed",fontFamily:"Tajawal,sans-serif"}}>تنفيذ العملية</button>
+          <button onClick={onClose} style={{flex:1,padding:11,borderRadius:10,background:bg,color:"#5A7A72",fontSize:14,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إلغاء</button>
+        </div>
+      </div>
+    </div>);
+}
+
+// ══ MAIN APP ══
 export default function App(){
   const [state,setState]=useState({members:[],rounds:[],users:[],hist:[],settings:{current_round:1,current_participants:[]},pays:{}});
   const [currentUser,setCurrentUser]=useState(null);
@@ -109,6 +172,7 @@ export default function App(){
   const [loading,setLoading]=useState(true);
   const [toast,setToast]=useState(null);
   const [shareModal,setShareModal]=useState(null);
+  const [resetModal,setResetModal]=useState(false);
   const [drawMode,setDrawMode]=useState("random");
   const [pendingWinner,setPendingWinner]=useState(null);
   const [spinning,setSpinning]=useState(false);
@@ -149,16 +213,51 @@ export default function App(){
     return()=>supabase.removeChannel(ch);
   },[]);
 
-  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3000);};
-  const isAdmin=currentUser?.role==="admin";
+  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
   const totalPot=curParticipants.reduce((s,mid)=>{const m=state.members.find(x=>x.id===mid);return s+(m?Number(m.amt):0);},0);
   const curPaid=curRound?curRound.pays.filter(p=>p.paid).length:0;
 
+  async function handleReset(type){
+    setResetModal(false);
+    try{
+      switch(type){
+        case "winners":
+          await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");
+          showToast("✅ تم إعادة تعيين الفائزين");break;
+        case "rounds":
+          await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("settings").update({value:"1"}).eq("key","current_round");
+          showToast("✅ تم Reset الجولات والمدفوعات");break;
+        case "history":
+          await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          showToast("✅ تم مسح سجل المعاملات");break;
+        case "members":
+          await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("settings").update({value:"1"}).eq("key","current_round");
+          await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");
+          showToast("✅ تم حذف كل الأعضاء");break;
+        case "full":
+          await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
+          await supabase.from("settings").update({value:"1"}).eq("key","current_round");
+          await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");
+          showToast("✅ تم Reset كامل للنظام");break;
+      }
+      loadAll();
+    }catch(e){showToast("حدث خطأ: "+e.message,"error");}
+  }
+
   async function addMember(name,phone,amt){
-    const{data:m}=await supabase.from("members").insert({name,phone,amt:Number(amt)}).select().single();
+    await supabase.from("members").insert({name,phone,amt:Number(amt)});
     const{data:all}=await supabase.from("members").select("id");
     const ids=(all||[]).map(x=>x.id);
     await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");
@@ -225,11 +324,27 @@ export default function App(){
   if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
   if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)}/>;
 
-  const TABS=[{id:"members",label:"الأعضاء",icon:"👥",admin:false},{id:"newround",label:"جولة جديدة",icon:"🎲",admin:true},{id:"pay",label:"المدفوعات",icon:"💳",admin:true},{id:"rounds",label:"سجل الجولات",icon:"📋",admin:false},{id:"history",label:"المعاملات",icon:"🕐",admin:false},{id:"users",label:"المستخدمون",icon:"🔐",admin:true}].filter(t=>!t.admin||isAdmin);
+  const isSuperAdmin = currentUser.role === "superadmin";
+  const isAdmin = ["superadmin","admin"].includes(currentUser.role);
+  const isAccountant = currentUser.role === "accountant";
+  const isMember = currentUser.role === "member";
+
+  const TABS=[
+    {id:"members", label:"الأعضاء",        icon:"👥", show: !isMember},
+    {id:"myinfo",  label:"بياناتي",         icon:"👤", show: isMember},
+    {id:"newround",label:"جولة جديدة",      icon:"🎲", show: isAdmin},
+    {id:"pay",     label:"المدفوعات",       icon:"💳", show: !isMember},
+    {id:"rounds",  label:"سجل الجولات",    icon:"📋", show: true},
+    {id:"history", label:"المعاملات",       icon:"🕐", show: !isMember},
+    {id:"users",   label:"المستخدمون",     icon:"🔐", show: isSuperAdmin},
+    {id:"reset",   label:"إعادة التعيين",  icon:"⚠️", show: isSuperAdmin},
+  ].filter(t=>t.show);
+
+  const roleInfo = ROLES[currentUser.role] || ROLES.member;
 
   return(
     <div dir="rtl" style={{minHeight:"100vh",background:bg,fontFamily:"Tajawal,sans-serif",color:"#1A2E28",display:"flex"}}>
-      <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet"/>
+      {resetModal&&<ResetModal onClose={()=>setResetModal(false)} onReset={handleReset}/>}
       <aside style={{width:230,background:G,display:"flex",flexDirection:"column",padding:"24px 0 16px",position:"fixed",right:0,top:0,bottom:0,zIndex:100,boxShadow:"4px 0 20px rgba(0,0,0,.15)"}}>
         <div style={{padding:"0 20px 20px",borderBottom:"1px solid rgba(255,255,255,.12)",marginBottom:14}}>
           <div style={{fontSize:26,marginBottom:4}}>🔄</div>
@@ -238,14 +353,16 @@ export default function App(){
         </div>
         <nav style={{flex:1}}>
           {TABS.map(t=>(
-            <div key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 20px",color:tab===t.id?"#fff":"rgba(255,255,255,.65)",cursor:"pointer",fontSize:14,fontWeight:500,borderRight:"3px solid "+(tab===t.id?"#fff":"transparent"),background:tab===t.id?"rgba(255,255,255,.14)":"transparent",transition:"all .18s"}}>
+            <div key={t.id} onClick={()=>t.id==="reset"?setResetModal(true):setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 20px",color:tab===t.id?"#fff":"rgba(255,255,255,.65)",cursor:"pointer",fontSize:14,fontWeight:500,borderRight:"3px solid "+(tab===t.id?"#fff":"transparent"),background:t.id==="reset"?"rgba(255,100,100,.15)":tab===t.id?"rgba(255,255,255,.14)":"transparent",transition:"all .18s"}}>
               <span style={{fontSize:16}}>{t.icon}</span>{t.label}
             </div>))}
         </nav>
         <div style={{padding:"14px 20px 0",borderTop:"1px solid rgba(255,255,255,.12)"}}>
           <div style={{background:"rgba(255,255,255,.12)",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
             <div style={{color:"#fff",fontSize:13,fontWeight:700}}>{currentUser.name}</div>
-            <div style={{color:"rgba(255,255,255,.5)",fontSize:11,marginTop:2}}>{isAdmin?"مدير":"مشترك"}</div>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4}}>
+              <span style={{fontSize:10,background:roleInfo.bg,color:roleInfo.color,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{roleInfo.icon} {roleInfo.label}</span>
+            </div>
           </div>
           <button onClick={()=>setCurrentUser(null)} style={{width:"100%",background:"rgba(255,100,100,.2)",border:"1px solid rgba(255,100,100,.3)",color:"rgba(255,200,200,.9)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تسجيل الخروج</button>
         </div>
@@ -254,7 +371,7 @@ export default function App(){
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:toast.type==="error"?"#FCE4EC":GL,color:toast.type==="error"?"#880E4F":GD,padding:"12px 24px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.15)",border:"2px solid "+(toast.type==="error"?"#F48FB1":GM)}}>{toast.msg}</div>}
         {shareModal&&(
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <div style={{background:sf,borderRadius:20,padding:28,width:420,maxWidth:"95vw",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+            <div style={{background:sf,borderRadius:20,padding:28,width:420,maxWidth:"95vw"}}>
               <div style={{textAlign:"center",marginBottom:20}}>
                 <div style={{fontSize:48,marginBottom:8}}>🎉</div>
                 <h3 style={{fontSize:18,fontWeight:800,margin:0}}>تم تسجيل الجولة!</h3>
@@ -274,17 +391,51 @@ export default function App(){
               <div><div style={{fontSize:20,fontWeight:700,lineHeight:1}}>{k.val}</div><div style={{fontSize:11,color:"#5A7A72",marginTop:3}}>{k.label}</div></div>
             </div>))}
         </div>
-        {tab==="members"&&<MembersTab state={state} isAdmin={isAdmin} onAdd={addMember} onRemove={removeMember}/>}
-        {tab==="newround"&&isAdmin&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");}}/>}
-        {tab==="pay"&&isAdmin&&<PayTab state={state} activePayRound={activePayRound} setActivePayRound={setActivePayRound} onToggle={togglePay} onPayAll={async(roundId,pays)=>{for(const p of pays){if(!p.paid)await supabase.from("pays").update({paid:true,paid_date:tod()}).eq("id",p.id);}showToast("تم تسجيل كل الدفعات");}}/>}
+        {tab==="members"&&<MembersTab state={state} canWrite={canDo(currentUser,"members_write")} onAdd={addMember} onRemove={removeMember}/>}
+        {tab==="myinfo"&&<MyInfoTab state={state} currentUser={currentUser}/>}
+        {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");}}/>}
+        {tab==="pay"&&<PayTab state={state} canWrite={canDo(currentUser,"pays_write")} activePayRound={activePayRound} setActivePayRound={setActivePayRound} onToggle={togglePay} onPayAll={async(roundId,pays)=>{for(const p of pays){if(!p.paid)await supabase.from("pays").update({paid:true,paid_date:tod()}).eq("id",p.id);}showToast("تم تسجيل كل الدفعات");}}/>}
         {tab==="rounds"&&<RoundsTab state={state} onShare={r=>setShareModal({roundId:r.id,shareToken:r.share_token})}/>}
         {tab==="history"&&<HistoryTab state={state}/>}
-        {tab==="users"&&isAdmin&&<UsersTab state={state} currentUser={currentUser} onAdd={addUser} onRemove={removeUser}/>}
+        {tab==="users"&&isSuperAdmin&&<UsersTab state={state} currentUser={currentUser} onAdd={addUser} onRemove={removeUser}/>}
       </main>
     </div>);
 }
 
-function MembersTab({state,isAdmin,onAdd,onRemove}){
+// ══ MY INFO TAB (للعضو العادي) ══
+function MyInfoTab({state,currentUser}){
+  const member=state.members.find(m=>m.phone===currentUser.phone);
+  const myRounds=state.rounds.filter(r=>r.pays?.find(p=>p.member_id===member?.id));
+  const myPays=myRounds.map(r=>({...r,pay:r.pays.find(p=>p.member_id===member?.id)}));
+  const totalPaid=myPays.reduce((s,r)=>s+(r.pay?.paid?Number(r.pay.amt):0),0);
+  const totalDue=myPays.reduce((s,r)=>s+Number(r.pay?.amt||0),0);
+  if(!member)return <div style={{textAlign:"center",padding:40,color:"#8FADA6"}}>لم يتم ربط حسابك بعضو بعد</div>;
+  return(
+    <div>
+      <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>بياناتي</h2></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
+        {[{label:"إجمالي مدفوع",val:totalPaid.toLocaleString()+" ر.س",bg:"#E8F5E9",icon:"✅"},{label:"إجمالي مستحق",val:totalDue.toLocaleString()+" ر.س",bg:"#FFF3E0",icon:"💰"},{label:"الجولات",val:myRounds.length+" جولة",bg:"#E3F2FD",icon:"📋"}].map((k,i)=>(
+          <div key={i} style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:11,background:k.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{k.icon}</div>
+            <div><div style={{fontSize:18,fontWeight:700}}>{k.val}</div><div style={{fontSize:11,color:"#5A7A72",marginTop:3}}>{k.label}</div></div>
+          </div>))}
+      </div>
+      <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>سجل مدفوعاتي</div>
+        {!myPays.length&&<div style={{textAlign:"center",padding:28,color:"#8FADA6"}}>لا توجد جولات بعد</div>}
+        {myPays.map(r=>(
+          <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #E2EAE7"}}>
+            <div><div style={{fontWeight:700,fontSize:14}}>الجولة #{r.round_num} {r.winner_id===member.id?"🏆":""}</div><div style={{fontSize:12,color:"#5A7A72"}}>{r.date}</div></div>
+            <div style={{textAlign:"left"}}>
+              <span style={{fontSize:12,padding:"3px 10px",borderRadius:20,fontWeight:700,background:r.pay?.paid?"#E8F5E9":"#FFF3E0",color:r.pay?.paid?"#2E7D32":"#E65100"}}>{r.pay?.paid?"✓ دفعت":"⏳ لم أدفع"}</span>
+              <div style={{fontSize:12,color:"#5A7A72",marginTop:4,textAlign:"center"}}>{Number(r.pay?.amt||0).toLocaleString()} ر.س</div>
+            </div>
+          </div>))}
+      </div>
+    </div>);
+}
+
+function MembersTab({state,canWrite,onAdd,onRemove}){
   const [name,setName]=useState("");const [phone,setPhone]=useState("");const [amt,setAmt]=useState("");
   const medals=["🥇","🥈","🥉"];
   const sorted=[...state.members].sort((a,b)=>{
@@ -297,16 +448,16 @@ function MembersTab({state,isAdmin,onAdd,onRemove}){
   return(
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>الأعضاء</h2><p style={{fontSize:13,color:"#5A7A72",margin:"4px 0 0"}}>مرتبون حسب الالتزام بالدفع</p></div>
-      {isAdmin&&(
-        <div style={{background:sf,borderRadius:14,padding:"18px 22px",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+      {canWrite&&(
+        <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>إضافة عضو جديد</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
             {[["الاسم",name,setName,"محمد علي"],["رقم الجوال",phone,setPhone,"05xxxxxxxx"],["المبلغ الشهري",amt,setAmt,"500"]].map(([lbl,val,set,ph])=>(
-              <div key={lbl}><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>{lbl}</label><input value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={{width:"100%",padding:"9px 12px",border:"1px solid "+bd,borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",boxSizing:"border-box",outline:"none"}}/></div>))}
-            <button onClick={()=>{if(!name||!phone||!amt)return;onAdd(name,phone,amt);setName("");setPhone("");setAmt("");}} style={{padding:"9px 20px",borderRadius:8,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",whiteSpace:"nowrap"}}>+ إضافة</button>
+              <div key={lbl}><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>{lbl}</label><input value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={{width:"100%",padding:"9px 12px",border:"1px solid #E2EAE7",borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",boxSizing:"border-box",outline:"none"}}/></div>))}
+            <button onClick={()=>{if(!name||!phone||!amt)return;onAdd(name,phone,amt);setName("");setPhone("");setAmt("");}} style={{padding:"9px 20px",borderRadius:8,background:"#0F6E56",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",whiteSpace:"nowrap"}}>+ إضافة</button>
           </div>
         </div>)}
-      <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>الأعضاء المشتركون <span style={{fontSize:12,color:"#5A7A72",fontWeight:400}}>({sorted.length} عضو)</span></div>
         {!sorted.length&&<div style={{textAlign:"center",padding:32,color:"#8FADA6"}}>لا يوجد أعضاء بعد</div>}
         {sorted.map((m,rank)=>{
@@ -315,16 +466,16 @@ function MembersTab({state,isAdmin,onAdd,onRemove}){
           const partCount=state.rounds.filter(r=>r.pays?.find(p=>p.member_id===m.id)).length;
           const pct=partCount?Math.round(paidCount/partCount*100):0;
           return(
-            <div key={m.id} style={{border:"1px solid "+bd,borderRadius:10,padding:"13px 15px",marginBottom:10}}>
+            <div key={m.id} style={{border:"1px solid #E2EAE7",borderRadius:10,padding:"13px 15px",marginBottom:10}}>
               <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:9}}>
-                <span style={{width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",background:bg,fontSize:rank<3?14:11,color:"#5A7A72",fontWeight:700}}>{rank<3?medals[rank]:rank+1}</span>
+                <span style={{width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",background:"#F5F7F6",fontSize:rank<3?14:11,color:"#5A7A72",fontWeight:700}}>{rank<3?medals[rank]:rank+1}</span>
                 <div style={{width:40,height:40,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13}}>{ini(m.name)}</div>
                 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{m.name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{m.phone} · {Number(m.amt).toLocaleString()} ر.س/شهر</div></div>
                 {m.won_round&&<span style={{fontSize:11,padding:"3px 9px",borderRadius:20,fontWeight:700,background:"#E3F2FD",color:"#1565C0"}}>🏆 فاز #{m.won_round}</span>}
-                {isAdmin&&<button onClick={()=>{if(window.confirm("حذف "+m.name+"؟"))onRemove(m.id,m.name);}} style={{padding:"3px 10px",borderRadius:6,background:"#FCE4EC",color:"#880E4F",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>حذف</button>}
+                {canWrite&&<button onClick={()=>{if(window.confirm("حذف "+m.name+"؟"))onRemove(m.id,m.name);}} style={{padding:"3px 10px",borderRadius:6,background:"#FCE4EC",color:"#880E4F",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>حذف</button>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:9}}>
-                <div style={{flex:1,height:5,background:"#EBF2EF",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",background:GM,borderRadius:3,width:pct+"%",transition:"width .4s"}}/></div>
+                <div style={{flex:1,height:5,background:"#EBF2EF",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",background:"#1D9E75",borderRadius:3,width:pct+"%",transition:"width .4s"}}/></div>
                 <span style={{fontSize:11,color:"#5A7A72",whiteSpace:"nowrap"}}>{paidCount}/{partCount} جولة</span>
               </div>
             </div>);})}
@@ -334,83 +485,87 @@ function MembersTab({state,isAdmin,onAdd,onRemove}){
 
 function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMode,setDrawMode,pendingWinner,setPendingWinner,spinning,spinDisplay,onStartDraw,onConfirm,onUpdateParticipants}){
   const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
-  if(curRound)return(<div style={{background:sf,borderRadius:14,padding:28,boxShadow:"0 1px 4px rgba(0,0,0,.06)",maxWidth:500}}><div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1565C0"}}>الجولة #{curRound.round_num} مكتملة — الفائز: <strong>{curRound.winner_name}</strong></div></div>);
+  if(curRound)return(<div style={{background:"#fff",borderRadius:14,padding:28,boxShadow:"0 1px 4px rgba(0,0,0,.06)",maxWidth:500}}><div style={{background:"#E3F2FD",border:"1px solid #90CAF9",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1565C0"}}>الجولة #{curRound.round_num} مكتملة — الفائز: <strong>{curRound.winner_name}</strong></div></div>);
   return(
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>إعداد الجولة #{curRoundNum}</h2></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:14,display:"flex",justifyContent:"space-between"}}>المشاركون
             <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>onUpdateParticipants(state.members.map(m=>m.id))} style={{padding:"4px 10px",borderRadius:6,background:GL,color:G,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>الكل</button>
-              <button onClick={()=>onUpdateParticipants([])} style={{padding:"4px 10px",borderRadius:6,background:bg,color:"#5A7A72",fontSize:12,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إلغاء</button>
+              <button onClick={()=>onUpdateParticipants(state.members.map(m=>m.id))} style={{padding:"4px 10px",borderRadius:6,background:"#E1F5EE",color:"#0F6E56",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>الكل</button>
+              <button onClick={()=>onUpdateParticipants([])} style={{padding:"4px 10px",borderRadius:6,background:"#F5F7F6",color:"#5A7A72",fontSize:12,border:"1px solid #E2EAE7",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إلغاء</button>
             </div>
           </div>
           {state.members.map(m=>{
             const ci=state.members.indexOf(m)%6;const checked=curParticipants.includes(m.id);
-            return(<div key={m.id} onClick={()=>{const n=checked?curParticipants.filter(x=>x!==m.id):[...curParticipants,m.id];onUpdateParticipants(n);}} style={{border:"2px solid "+(checked?G:bd),borderRadius:8,padding:"11px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:11,background:checked?GL:"transparent"}}>
-              <div style={{width:20,height:20,borderRadius:5,border:"2px solid "+(checked?G:bd),display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,background:checked?G:"transparent",color:"#fff"}}>{checked?"✓":""}</div>
+            return(<div key={m.id} onClick={()=>{const n=checked?curParticipants.filter(x=>x!==m.id):[...curParticipants,m.id];onUpdateParticipants(n);}} style={{border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"11px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:11,background:checked?"#E1F5EE":"transparent"}}>
+              <div style={{width:20,height:20,borderRadius:5,border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,background:checked?"#0F6E56":"transparent",color:"#fff"}}>{checked?"✓":""}</div>
               <div style={{width:36,height:36,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(m.name)}</div>
               <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{m.name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{Number(m.amt).toLocaleString()} ر.س</div></div>
               {m.won_round&&<span style={{fontSize:10,background:"#E3F2FD",color:"#1565C0",padding:"1px 7px",borderRadius:10,fontWeight:700}}>فاز #{m.won_round}</span>}
             </div>);})}
-          <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+bd,display:"flex",justifyContent:"space-between",fontSize:13}}>
+          <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #E2EAE7",display:"flex",justifyContent:"space-between",fontSize:13}}>
             <span style={{color:"#5A7A72"}}>الإجمالي:</span>
             <span style={{fontWeight:700,fontSize:16}}>{totalPot.toLocaleString()} ر.س ({curParticipants.length} مشارك)</span>
           </div>
         </div>
-        <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>اختيار الفائز</div>
           <div style={{display:"flex",gap:8,marginBottom:16}}>
             {[["random","🎲 قرعة عشوائية"],["manual","🤝 بالتراضي"]].map(([m,l])=>(
-              <button key={m} onClick={()=>{setDrawMode(m);setPendingWinner(null);}} style={{flex:1,padding:9,borderRadius:9,background:drawMode===m?G:bg,color:drawMode===m?"#fff":"#5A7A72",fontSize:13,fontWeight:700,border:"1px solid "+(drawMode===m?G:bd),cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{l}</button>))}
+              <button key={m} onClick={()=>{setDrawMode(m);setPendingWinner(null);}} style={{flex:1,padding:9,borderRadius:9,background:drawMode===m?"#0F6E56":"#F5F7F6",color:drawMode===m?"#fff":"#5A7A72",fontSize:13,fontWeight:700,border:"1px solid "+(drawMode===m?"#0F6E56":"#E2EAE7"),cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{l}</button>))}
           </div>
           {drawMode==="random"&&(
             <div style={{textAlign:"center"}}>
-              <div onClick={!spinning?onStartDraw:undefined} style={{width:90,height:90,borderRadius:"50%",border:"3px solid "+G,background:GL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",cursor:spinning?"not-allowed":"pointer",fontSize:38,animation:spinning?"spin .12s linear infinite":"none"}}>🎲</div>
-              <div style={{fontSize:16,fontWeight:700,color:G,minHeight:24}}>{spinDisplay}</div>
+              <div onClick={!spinning?onStartDraw:undefined} style={{width:90,height:90,borderRadius:"50%",border:"3px solid #0F6E56",background:"#E1F5EE",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",cursor:spinning?"not-allowed":"pointer",fontSize:38,animation:spinning?"spin .12s linear infinite":"none"}}>🎲</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#0F6E56",minHeight:24}}>{spinDisplay}</div>
               {!spinning&&!pendingWinner&&<div style={{fontSize:12,color:"#8FADA6",marginTop:4}}>اضغط للقرعة</div>}
             </div>)}
-          {drawMode==="manual"&&eligible.map(mid=>{const m=state.members.find(x=>x.id===mid);if(!m)return null;const ci=state.members.indexOf(m)%6;const isSel=pendingWinner?.id===mid;return(<div key={mid} onClick={()=>setPendingWinner(m)} style={{border:"2px solid "+(isSel?G:bd),borderRadius:8,padding:"11px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:11,background:isSel?GL:"transparent"}}><div style={{width:36,height:36,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(m.name)}</div><div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{m.name}</div></div>{isSel&&<span style={{color:G}}>✓</span>}</div>);})}
+          {drawMode==="manual"&&eligible.map(mid=>{const m=state.members.find(x=>x.id===mid);if(!m)return null;const ci=state.members.indexOf(m)%6;const isSel=pendingWinner?.id===mid;return(<div key={mid} onClick={()=>setPendingWinner(m)} style={{border:"2px solid "+(isSel?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"11px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:11,background:isSel?"#E1F5EE":"transparent"}}><div style={{width:36,height:36,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(m.name)}</div><div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{m.name}</div></div>{isSel&&<span style={{color:"#0F6E56"}}>✓</span>}</div>);})}
           {pendingWinner&&(
-            <div style={{background:GL,border:"2px solid "+GM,borderRadius:10,padding:16,margin:"12px 0"}}>
-              <div style={{fontSize:11,fontWeight:700,color:G,marginBottom:4}}>الفائز المختار</div>
-              <div style={{fontSize:20,fontWeight:700,color:GD}}>{pendingWinner.name}</div>
-              <div style={{fontSize:13,color:G,marginTop:4}}>المبلغ الإجمالي: {totalPot.toLocaleString()} ر.س</div>
+            <div style={{background:"#E1F5EE",border:"2px solid #1D9E75",borderRadius:10,padding:16,margin:"12px 0"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#0F6E56",marginBottom:4}}>الفائز المختار</div>
+              <div style={{fontSize:20,fontWeight:700,color:"#085041"}}>{pendingWinner.name}</div>
+              <div style={{fontSize:13,color:"#0F6E56",marginTop:4}}>المبلغ: {totalPot.toLocaleString()} ر.س</div>
             </div>)}
-          {pendingWinner&&<button onClick={()=>onConfirm(pendingWinner,drawMode)} style={{width:"100%",padding:11,borderRadius:10,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginTop:8}}>✅ تأكيد وبدء الجولة التالية</button>}
+          {pendingWinner&&<button onClick={()=>onConfirm(pendingWinner,drawMode)} style={{width:"100%",padding:11,borderRadius:10,background:"#0F6E56",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginTop:8}}>✅ تأكيد وبدء الجولة التالية</button>}
         </div>
       </div>
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
     </div>);
 }
 
-function PayTab({state,activePayRound,setActivePayRound,onToggle,onPayAll}){
+function PayTab({state,canWrite,activePayRound,setActivePayRound,onToggle,onPayAll}){
   const curRoundNum=activePayRound??(state.rounds.length?state.rounds[state.rounds.length-1].round_num:null);
   const round=state.rounds.find(r=>r.round_num===curRoundNum);
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <h2 style={{fontSize:21,fontWeight:700,margin:0}}>المدفوعات</h2>
-        {round&&<button onClick={()=>onPayAll(round.id,round.pays)} style={{padding:"8px 16px",borderRadius:8,background:GL,color:G,fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تحديد الكل مدفوع</button>}
+        {round&&canWrite&&<button onClick={()=>onPayAll(round.id,round.pays)} style={{padding:"8px 16px",borderRadius:8,background:"#E1F5EE",color:"#0F6E56",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تحديد الكل مدفوع</button>}
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
         {[...state.rounds].reverse().map(r=>(
-          <button key={r.round_num} onClick={()=>setActivePayRound(r.round_num)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid "+(r.round_num===curRoundNum?G:bd),background:r.round_num===curRoundNum?G:bg,color:r.round_num===curRoundNum?"#fff":"#5A7A72",fontFamily:"Tajawal,sans-serif"}}>جولة #{r.round_num}</button>))}
+          <button key={r.round_num} onClick={()=>setActivePayRound(r.round_num)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid "+(r.round_num===curRoundNum?"#0F6E56":"#E2EAE7"),background:r.round_num===curRoundNum?"#0F6E56":"#F5F7F6",color:r.round_num===curRoundNum?"#fff":"#5A7A72",fontFamily:"Tajawal,sans-serif"}}>جولة #{r.round_num}</button>))}
       </div>
       {!round&&<div style={{textAlign:"center",padding:40,color:"#8FADA6"}}>لا توجد جولات بعد</div>}
       {round&&(
-        <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>دفعات الجولة #{round.round_num}</div>
           <div style={{fontSize:12,color:"#5A7A72",marginBottom:14}}>الفائز: <strong>{round.winner_name}</strong> · {round.pays.filter(p=>p.paid).length}/{round.pays.length} دفعوا</div>
           {round.pays.map(pay=>(
-            <div key={pay.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid "+bd}}>
+            <div key={pay.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #E2EAE7"}}>
               <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{pay.member_name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{Number(pay.amt).toLocaleString()} ر.س {pay.paid_date?"· "+pay.paid_date:""}</div></div>
-              <button onClick={()=>onToggle(pay.id,pay.paid,pay.member_name,round.round_num,pay.amt)} style={{padding:"6px 16px",borderRadius:8,background:pay.paid?GL:"#FFF3E0",color:pay.paid?GD:"#E65100",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{pay.paid?"✓ دفع":"تسجيل الدفع"}</button>
+              {canWrite?(
+                <button onClick={()=>onToggle(pay.id,pay.paid,pay.member_name,round.round_num,pay.amt)} style={{padding:"6px 16px",borderRadius:8,background:pay.paid?"#E1F5EE":"#FFF3E0",color:pay.paid?"#085041":"#E65100",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{pay.paid?"✓ دفع":"تسجيل الدفع"}</button>
+              ):(
+                <span style={{fontSize:12,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓ دفع":"⏳ لم يدفع"}</span>
+              )}
             </div>))}
-          <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+bd,display:"flex",justifyContent:"space-between",fontSize:13,color:"#5A7A72"}}>
+          <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #E2EAE7",display:"flex",justifyContent:"space-between",fontSize:13,color:"#5A7A72"}}>
             <span>إجمالي المحصّل:</span>
-            <span style={{fontWeight:700,color:G}}>{round.pays.filter(p=>p.paid).reduce((s,p)=>s+Number(p.amt),0).toLocaleString()} ر.س</span>
+            <span style={{fontWeight:700,color:"#0F6E56"}}>{round.pays.filter(p=>p.paid).reduce((s,p)=>s+Number(p.amt),0).toLocaleString()} ر.س</span>
           </div>
         </div>)}
     </div>);
@@ -423,11 +578,11 @@ function RoundsTab({state,onShare}){
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>سجل الجولات</h2></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           {!state.rounds.length&&<div style={{textAlign:"center",padding:28,color:"#8FADA6"}}>لا توجد جولات بعد</div>}
           {[...state.rounds].reverse().map(r=>{
             const paidCount=r.pays.filter(p=>p.paid).length;
-            return(<div key={r.round_num} onClick={()=>setSel(r.round_num)} style={{border:"1px solid "+(r.round_num===sel?G:bd),borderRadius:10,padding:"13px 15px",marginBottom:9,cursor:"pointer",background:r.round_num===sel?GL:"transparent"}}>
+            return(<div key={r.round_num} onClick={()=>setSel(r.round_num)} style={{border:"1px solid "+(r.round_num===sel?"#0F6E56":"#E2EAE7"),borderRadius:10,padding:"13px 15px",marginBottom:9,cursor:"pointer",background:r.round_num===sel?"#E1F5EE":"transparent"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:700}}>الجولة #{r.round_num}</span>
                 <div style={{display:"flex",gap:6}}>
@@ -439,13 +594,13 @@ function RoundsTab({state,onShare}){
             </div>);})}
         </div>
         {selRound&&(
-          <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 4px 16px rgba(0,0,0,.08)",borderRight:"4px solid "+GM}}>
+          <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 4px 16px rgba(0,0,0,.08)",borderRight:"4px solid #1D9E75"}}>
             <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>تفاصيل الجولة #{selRound.round_num}</div>
-            <div style={{fontSize:12,color:"#5A7A72",marginBottom:16}}>الفائز: <strong style={{color:G}}>{selRound.winner_name}</strong></div>
+            <div style={{fontSize:12,color:"#5A7A72",marginBottom:16}}>الفائز: <strong style={{color:"#0F6E56"}}>{selRound.winner_name}</strong></div>
             {selRound.pays.map(pay=>(
-              <div key={pay.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid "+bd,fontSize:13}}>
+              <div key={pay.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #E2EAE7",fontSize:13}}>
                 <div style={{flex:1,fontWeight:700}}>{pay.member_name}</div>
-                <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:700,background:pay.paid?GL:"#FFF3E0",color:pay.paid?GD:"#E65100"}}>{pay.paid?"✓ دفع":"لم يدفع"}</span>
+                <span style={{fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:700,background:pay.paid?"#E1F5EE":"#FFF3E0",color:pay.paid?"#085041":"#E65100"}}>{pay.paid?"✓ دفع":"لم يدفع"}</span>
                 <span style={{fontWeight:700}}>{Number(pay.amt).toLocaleString()} ر.س</span>
               </div>))}
           </div>)}
@@ -458,10 +613,10 @@ function HistoryTab({state}){
   return(
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>سجل المعاملات</h2></div>
-      <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
         {!state.hist.length&&<div style={{textAlign:"center",padding:32,color:"#8FADA6"}}>لا توجد معاملات بعد</div>}
         {state.hist.map(h=>{const[ico,hbg,tc]=typeMap[h.type]||["📌","#F5F7F6","#5A7A72"];return(
-          <div key={h.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid "+bd}}>
+          <div key={h.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #E2EAE7"}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:34,height:34,borderRadius:8,background:hbg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{ico}</div>
               <div><div style={{fontSize:13,fontWeight:600}}>{h.text}</div><div style={{fontSize:11,color:"#8FADA6"}}>{h.date}</div></div>
@@ -474,26 +629,33 @@ function HistoryTab({state}){
 
 function UsersTab({state,currentUser,onAdd,onRemove}){
   const [name,setName]=useState("");const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [role,setRole]=useState("member");
+  const roleOptions=[{value:"admin",label:"مدير 🔑"},{value:"accountant",label:"محاسب 💼"},{value:"member",label:"عضو 👤"}];
   return(
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>إدارة المستخدمين</h2></div>
-      <div style={{background:sf,borderRadius:14,padding:"18px 22px",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>إضافة مستخدم جديد</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 120px 120px auto",gap:10,alignItems:"end"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 120px 140px auto",gap:10,alignItems:"end"}}>
           {[["الاسم",name,setName,"الاسم"],["الجوال",phone,setPhone,"05xxxxxxxx"],["PIN",pin,setPin,"1234"]].map(([lbl,val,set,ph])=>(
-            <div key={lbl}><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>{lbl}</label><input value={val} onChange={e=>set(e.target.value)} placeholder={ph} type={lbl==="PIN"?"password":"text"} style={{width:"100%",padding:"9px 12px",border:"1px solid "+bd,borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",boxSizing:"border-box",outline:"none"}}/></div>))}
-          <div><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>الصلاحية</label><select value={role} onChange={e=>setRole(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1px solid "+bd,borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",outline:"none"}}><option value="member">مشترك</option><option value="admin">مدير</option></select></div>
-          <button onClick={()=>{if(!name||!phone||!pin)return;onAdd(name,phone,pin,role);setName("");setPhone("");setPin("");setRole("member");}} style={{padding:"9px 20px",borderRadius:8,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",whiteSpace:"nowrap"}}>+ إضافة</button>
+            <div key={lbl}><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>{lbl}</label><input value={val} onChange={e=>set(e.target.value)} placeholder={ph} type={lbl==="PIN"?"password":"text"} style={{width:"100%",padding:"9px 12px",border:"1px solid #E2EAE7",borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",boxSizing:"border-box",outline:"none"}}/></div>))}
+          <div><label style={{display:"block",fontSize:12,fontWeight:700,color:"#5A7A72",marginBottom:4}}>الصلاحية</label>
+            <select value={role} onChange={e=>setRole(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1px solid #E2EAE7",borderRadius:8,fontSize:14,fontFamily:"Tajawal,sans-serif",direction:"rtl",outline:"none"}}>
+              {roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <button onClick={()=>{if(!name||!phone||!pin)return;onAdd(name,phone,pin,role);setName("");setPhone("");setPin("");setRole("member");}} style={{padding:"9px 20px",borderRadius:8,background:"#0F6E56",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",whiteSpace:"nowrap"}}>+ إضافة</button>
         </div>
       </div>
-      <div style={{background:sf,borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
-        {(state.users||[]).map(u=>(
-          <div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid "+bd}}>
-            <div style={{width:40,height:40,borderRadius:"50%",background:u.role==="admin"?"#FFF3E0":GL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{u.role==="admin"?"🔑":"👤"}</div>
-            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{u.name}{u.id===currentUser.id?<span style={{fontSize:10,background:GL,color:GD,padding:"1px 7px",borderRadius:10,fontWeight:700,marginRight:6}}>أنت</span>:null}</div><div style={{fontSize:12,color:"#5A7A72"}}>{u.phone}</div></div>
-            <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:u.role==="admin"?"#FFF3E0":GL,color:u.role==="admin"?"#E65100":GD}}>{u.role==="admin"?"مدير":"مشترك"}</span>
-            {u.id!==currentUser.id&&<button onClick={()=>{if(window.confirm("حذف "+u.name+"؟"))onRemove(u.id);}} style={{padding:"4px 12px",borderRadius:6,background:"#FCE4EC",color:"#880E4F",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>حذف</button>}
-          </div>))}
+      <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        {(state.users||[]).map(u=>{
+          const ri=ROLES[u.role]||ROLES.member;
+          return(
+          <div key={u.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #E2EAE7"}}>
+            <div style={{width:40,height:40,borderRadius:"50%",background:ri.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{ri.icon}</div>
+            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{u.name}{u.id===currentUser.id?<span style={{fontSize:10,background:"#E1F5EE",color:"#085041",padding:"1px 7px",borderRadius:10,fontWeight:700,marginRight:6}}>أنت</span>:null}</div><div style={{fontSize:12,color:"#5A7A72"}}>{u.phone}</div></div>
+            <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:ri.bg,color:ri.color}}>{ri.label}</span>
+            {u.id!==currentUser.id&&u.role!=="superadmin"&&<button onClick={()=>{if(window.confirm("حذف "+u.name+"؟"))onRemove(u.id);}} style={{padding:"4px 12px",borderRadius:6,background:"#FCE4EC",color:"#880E4F",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>حذف</button>}
+          </div>);})}
       </div>
     </div>);
 }
