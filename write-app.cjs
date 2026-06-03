@@ -7,93 +7,175 @@ const tod = () => new Date().toLocaleDateString("ar-SA");
 const AVBG = [["#E8F5E9","#2E7D32"],["#E3F2FD","#1565C0"],["#FFF3E0","#E65100"],["#F3E5F5","#6A1B9A"],["#FCE4EC","#880E4F"],["#E0F7FA","#00695C"]];
 const G="#0F6E56",GM="#1D9E75",GL="#E1F5EE",GD="#085041",sf="#fff",bg="#F5F7F6",bd="#E2EAE7";
 
-const ROLES = {
-  superadmin:{ label:"Super Admin", icon:"👑", color:"#E65100", bg:"#FFF3E0" },
-  admin:     { label:"مدير",        icon:"🔑", color:"#1565C0", bg:"#E3F2FD" },
-  accountant:{ label:"محاسب",      icon:"💼", color:"#6A1B9A", bg:"#F3E5F5" },
-  member:    { label:"عضو",        icon:"👤", color:"#2E7D32", bg:"#E8F5E9"  }
-};
+const ROLES={superadmin:{label:"Super Admin",icon:"👑",color:"#E65100",bg:"#FFF3E0"},admin:{label:"مدير",icon:"🔑",color:"#1565C0",bg:"#E3F2FD"},accountant:{label:"محاسب",icon:"💼",color:"#6A1B9A",bg:"#F3E5F5"},member:{label:"عضو",icon:"👤",color:"#2E7D32",bg:"#E8F5E9"}};
 const canDo=(user,action)=>{const r=user?.role;switch(action){case"reset":return r==="superadmin";case"manage_users":return r==="superadmin";case"rounds":return["superadmin","admin"].includes(r);case"members_write":return["superadmin","admin"].includes(r);case"pays_write":return["superadmin","admin","accountant"].includes(r);default:return false;}};
 
 function buildShareLink(rid,token){return window.location.href.split("?")[0]+"?view=round&rid="+rid+"&token="+token;}
 function buildLiveLink(drawId,token){return window.location.href.split("?")[0]+"?view=live&did="+drawId+"&token="+token;}
-function parseShareParams(){const p=new URLSearchParams(window.location.search);if(p.get("view")==="round")return{type:"round",rid:p.get("rid"),token:p.get("token")};if(p.get("view")==="live")return{type:"live",did:p.get("did"),token:p.get("token")};return null;}
 
-// ══ LIVE DRAW VIEW (ما يراه المشارك) ══
+// ══════════════════════════════════════════
+// LIVE DRAW VIEW — الرابط الثابت للمشارك
+// 3 مراحل: انتظار → قرعة → فائز+مدفوعات
+// ══════════════════════════════════════════
 function LiveDrawView(){
   const p=new URLSearchParams(window.location.search);
   const did=p.get("did"),token=p.get("token");
   const [draw,setDraw]=useState(null);
+  const [pays,setPays]=useState([]);
   const [loading,setLoading]=useState(true);
 
   useEffect(()=>{
-    supabase.from("live_draw").select("*").eq("id",did).eq("share_token",token).single().then(({data})=>{setDraw(data);setLoading(false);});
-    const ch=supabase.channel("live-"+did).on("postgres_changes",{event:"UPDATE",schema:"public",table:"live_draw",filter:"id=eq."+did},({new:d})=>setDraw(d)).subscribe();
+    // تحميل بيانات القرعة
+    supabase.from("live_draw").select("*").eq("id",did).eq("share_token",token).single()
+      .then(({data})=>{
+        setDraw(data);
+        setLoading(false);
+        // لو القرعة مؤكدة، حمّل المدفوعات
+        if(data?.round_id){
+          supabase.from("pays").select("*").eq("round_id",data.round_id)
+            .then(({data:ps})=>setPays(ps||[]));
+        }
+      });
+
+    // اشتراك Realtime للقرعة
+    const ch=supabase.channel("live-"+did)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"live_draw",filter:"id=eq."+did},({new:d})=>{
+        setDraw(d);
+        if(d.round_id){
+          supabase.from("pays").select("*").eq("round_id",d.round_id)
+            .then(({data:ps})=>setPays(ps||[]));
+        }
+      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},({new:pay})=>{
+        setPays(prev=>{
+          const idx=prev.findIndex(x=>x.id===pay.id);
+          if(idx>=0){const n=[...prev];n[idx]=pay;return n;}
+          return [...prev,pay];
+        });
+      })
+      .subscribe();
     return()=>supabase.removeChannel(ch);
   },[did]);
 
-  if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
-  if(!draw)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
+  if(loading)return(
+    <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>
+      جاري التحميل...
+    </div>);
+
+  if(!draw)return(
+    <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>
+      🔒 رابط غير صحيح
+    </div>);
 
   const parts=draw.participants||[];
+  const isWaiting=draw.status==="waiting";
   const isSpinning=draw.status==="spinning";
   const isDone=draw.status==="done";
+  const isConfirmed=draw.is_confirmed;
+  const paidCount=pays.filter(p=>p.paid).length;
+  const totalPot=pays.reduce((s,p)=>s+Number(p.amt),0);
 
   return(
-    <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a1628 0%,#0F1923 50%,#0a2820 100%)",fontFamily:"Tajawal,sans-serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{maxWidth:500,width:"100%"}}>
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:52,marginBottom:8}}>🎰</div>
-          <h1 style={{color:GM,fontSize:28,fontWeight:800,margin:0}}>قرعة الجمعية الدوّارة</h1>
-          <p style={{color:"rgba(255,255,255,.5)",fontSize:14,marginTop:6}}>الجولة #{draw.round_num} · شاهد القرعة مباشرة</p>
+    <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a1628,#0F1923,#0a2820)",fontFamily:"Tajawal,sans-serif",padding:20}}>
+      <div style={{maxWidth:520,margin:"0 auto"}}>
+
+        {/* HEADER */}
+        <div style={{textAlign:"center",marginBottom:28,paddingTop:16}}>
+          <div style={{fontSize:44,marginBottom:6}}>🎰</div>
+          <h1 style={{color:GM,fontSize:24,fontWeight:800,margin:0}}>قرعة الجمعية الدوّارة</h1>
+          <p style={{color:"rgba(255,255,255,.4)",fontSize:13,marginTop:4}}>الجولة #{draw.round_num}</p>
+          {/* STATUS PILL */}
+          <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:8,background:"rgba(255,255,255,.08)",borderRadius:20,padding:"4px 14px",fontSize:12}}>
+            {isWaiting&&<><span style={{width:8,height:8,borderRadius:"50%",background:"#FFA726",display:"inline-block"}}/>
+              <span style={{color:"#FFA726",fontWeight:700}}>في انتظار بدء القرعة</span></>}
+            {isSpinning&&<><span style={{width:8,height:8,borderRadius:"50%",background:GM,display:"inline-block",animation:"blink .6s ease-in-out infinite"}}/>
+              <span style={{color:GM,fontWeight:700}}>🔴 القرعة تدور الآن</span></>}
+            {isDone&&!isConfirmed&&<><span style={{width:8,height:8,borderRadius:"50%",background:"#FFD700",display:"inline-block"}}/>
+              <span style={{color:"#FFD700",fontWeight:700}}>🏆 تم اختيار الفائز</span></>}
+            {isConfirmed&&<><span style={{width:8,height:8,borderRadius:"50%",background:GM,display:"inline-block"}}/>
+              <span style={{color:GM,fontWeight:700}}>✅ الجولة مؤكدة</span></>}
+          </div>
         </div>
 
         {/* DRUM MACHINE */}
-        <div style={{background:"rgba(255,255,255,.04)",border:"2px solid rgba(29,158,117,.3)",borderRadius:24,padding:32,marginBottom:24,textAlign:"center",position:"relative",overflow:"hidden"}}>
-          {isSpinning&&<div style={{position:"absolute",inset:0,background:"linear-gradient(135deg,rgba(15,110,86,.1),rgba(29,158,117,.05))",animation:"pulse 1s ease-in-out infinite"}}/>}
-          
-          <div style={{fontSize:isDone?80:isSpinning?60:50,marginBottom:16,transition:"font-size .3s",filter:isSpinning?"drop-shadow(0 0 20px #1D9E75)":"none"}}>
-            {isDone?"🏆":isSpinning?"🎲":"⏳"}
+        <div style={{background:"rgba(255,255,255,.04)",border:"2px solid "+(isSpinning?"rgba(29,158,117,.5)":isDone?"rgba(255,215,0,.3)":"rgba(255,255,255,.1)"),borderRadius:24,padding:"28px 24px",marginBottom:20,textAlign:"center",position:"relative",overflow:"hidden",transition:"border-color .5s"}}>
+          {isSpinning&&<div style={{position:"absolute",inset:0,background:"linear-gradient(135deg,rgba(15,110,86,.08),transparent)",animation:"pulse 1s ease-in-out infinite"}}/>}
+
+          <div style={{fontSize:isConfirmed?70:isDone?64:isSpinning?52:44,marginBottom:14,transition:"font-size .4s",filter:isSpinning?"drop-shadow(0 0 24px #1D9E75)":isDone?"drop-shadow(0 0 30px #FFD700)":"none"}}>
+            {isConfirmed?"🎊":isDone?"🏆":isSpinning?"🎲":"⏳"}
           </div>
 
-          <div style={{minHeight:60,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            {draw.status==="waiting"&&(
-              <div style={{color:"rgba(255,255,255,.5)",fontSize:18}}>في انتظار بدء القرعة...</div>)}
+          <div style={{minHeight:70,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            {isWaiting&&<div style={{color:"rgba(255,255,255,.4)",fontSize:16}}>في انتظار بدء القرعة...</div>}
             {isSpinning&&(
-              <div style={{color:"#fff",fontSize:32,fontWeight:800,letterSpacing:2,animation:"bounce .15s ease-in-out infinite",textShadow:"0 0 30px #1D9E75"}}>{draw.current_name}</div>)}
-            {isDone&&(
+              <div style={{color:"#fff",fontSize:34,fontWeight:800,animation:"bounce .15s ease-in-out infinite",textShadow:"0 0 40px #1D9E75",letterSpacing:1}}>
+                {draw.current_name}
+              </div>)}
+            {(isDone||isConfirmed)&&(
               <div style={{textAlign:"center"}}>
-                <div style={{color:"rgba(255,255,255,.6)",fontSize:14,marginBottom:6}}>🎊 الفائز هو</div>
-                <div style={{color:"#fff",fontSize:36,fontWeight:800,textShadow:"0 0 40px #FFD700"}}>{draw.winner_name}</div>
+                <div style={{color:"rgba(255,255,255,.5)",fontSize:13,marginBottom:6}}>🎊 الفائز هو</div>
+                <div style={{color:"#FFD700",fontSize:38,fontWeight:800,textShadow:"0 0 40px rgba(255,215,0,.5)"}}>{draw.winner_name}</div>
+                {isConfirmed&&<div style={{color:GL,fontSize:14,marginTop:6}}>💰 المبلغ الإجمالي: {totalPot.toLocaleString()} ر.س</div>}
               </div>)}
           </div>
 
           {isSpinning&&(
-            <div style={{marginTop:16,display:"flex",justifyContent:"center",gap:6}}>
-              {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:GM,animation:"dot "+(.6+i*.2)+"s ease-in-out infinite alternate"}}/>)}
+            <div style={{marginTop:12,display:"flex",justifyContent:"center",gap:6}}>
+              {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:GM,animation:"dot "+(.5+i*.2)+"s ease-in-out infinite alternate"}}/>)}
             </div>)}
         </div>
 
-        {/* PARTICIPANTS */}
-        <div style={{background:"rgba(255,255,255,.04)",borderRadius:16,padding:"18px 20px"}}>
-          <div style={{color:"rgba(255,255,255,.6)",fontSize:13,fontWeight:700,marginBottom:14,textAlign:"center"}}>
-            {isDone?"نتيجة القرعة":"المشاركون في القرعة"} · {parts.length} مشارك
+        {/* PAYMENTS SECTION — تظهر بعد التأكيد */}
+        {isConfirmed&&pays.length>0&&(
+          <div style={{background:"rgba(255,255,255,.05)",borderRadius:16,padding:"18px 20px",marginBottom:16}}>
+            <div style={{color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:700,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span>💳 المدفوعات</span>
+              <span style={{color:GM,fontWeight:700}}>{paidCount} / {pays.length} دفعوا</span>
+            </div>
+            {/* PROGRESS BAR */}
+            <div style={{height:6,background:"rgba(255,255,255,.1)",borderRadius:3,overflow:"hidden",marginBottom:14}}>
+              <div style={{height:"100%",background:GM,borderRadius:3,width:(pays.length?paidCount/pays.length*100:0)+"%",transition:"width .5s"}}/>
+            </div>
+            {pays.map((pay,i)=>(
+              <div key={pay.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,.06)"}}>
+                <div style={{width:34,height:34,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,flexShrink:0}}>{ini(pay.member_name||"")}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fff",fontSize:13,fontWeight:700}}>{pay.member_name} {draw.winner_id===pay.member_id?"🏆":""}</div>
+                  <div style={{color:"rgba(255,255,255,.4)",fontSize:11}}>{Number(pay.amt).toLocaleString()} ر.س</div>
+                </div>
+                <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"rgba(46,125,50,.3)":"rgba(230,81,0,.2)",color:pay.paid?"#81C784":"#FFB74D",border:"1px solid "+(pay.paid?"rgba(46,125,50,.4)":"rgba(230,81,0,.3)"),flexShrink:0}}>
+                  {pay.paid?"✓ دفع":"⏳ لم يدفع"}
+                </span>
+              </div>))}
+            <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",justifyContent:"space-between",fontSize:13}}>
+              <span style={{color:"rgba(255,255,255,.5)"}}>المحصّل حتى الآن:</span>
+              <span style={{fontWeight:700,color:GM}}>{pays.filter(p=>p.paid).reduce((s,p)=>s+Number(p.amt),0).toLocaleString()} ر.س</span>
+            </div>
+          </div>)}
+
+        {/* PARTICIPANTS GRID */}
+        <div style={{background:"rgba(255,255,255,.04)",borderRadius:16,padding:"16px 18px"}}>
+          <div style={{color:"rgba(255,255,255,.5)",fontSize:12,fontWeight:700,marginBottom:12,textAlign:"center"}}>
+            {isConfirmed?"نتيجة القرعة":"المشاركون في القرعة"} · {parts.length} مشارك
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
             {parts.map((name,i)=>{
-              const isWinner=isDone&&name===draw.winner_name;
+              const isWinner=(isDone||isConfirmed)&&name===draw.winner_name;
               const isActive=isSpinning&&name===draw.current_name;
               return(
-                <div key={i} style={{background:isWinner?"linear-gradient(135deg,#0F6E56,#1D9E75)":isActive?"rgba(29,158,117,.3)":"rgba(255,255,255,.06)",borderRadius:10,padding:"10px 12px",textAlign:"center",transition:"all .2s",border:isActive?"2px solid #1D9E75":"2px solid transparent",transform:isWinner?"scale(1.05)":"scale(1)"}}>
-                  <div style={{width:36,height:36,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,margin:"0 auto 6px"}}>{ini(name)}</div>
-                  <div style={{color:isWinner||isActive?"#fff":"rgba(255,255,255,.7)",fontSize:12,fontWeight:isWinner?700:400}}>{name}</div>
-                  {isWinner&&<div style={{fontSize:16,marginTop:4}}>🏆</div>}
+                <div key={i} style={{background:isWinner?"linear-gradient(135deg,#0F6E56,#1D9E75)":isActive?"rgba(29,158,117,.25)":"rgba(255,255,255,.05)",borderRadius:10,padding:"10px 8px",textAlign:"center",transition:"all .2s",border:isActive?"2px solid "+GM:isWinner?"2px solid #FFD700":"2px solid transparent",transform:isWinner?"scale(1.06)":"scale(1)"}}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,margin:"0 auto 6px"}}>{ini(name)}</div>
+                  <div style={{color:isWinner||isActive?"#fff":"rgba(255,255,255,.6)",fontSize:11,fontWeight:isWinner?700:400,lineHeight:1.3}}>{name}</div>
+                  {isWinner&&<div style={{fontSize:14,marginTop:4}}>🏆</div>}
                 </div>);})}
           </div>
         </div>
-        <div style={{textAlign:"center",marginTop:20,color:"rgba(255,255,255,.2)",fontSize:11}}>الجمعية الدوّارة · قرعة مباشرة</div>
+
+        <div style={{textAlign:"center",marginTop:20,color:"rgba(255,255,255,.15)",fontSize:11}}>
+          الجمعية الدوّارة · رابط ثابت للمشارك
+        </div>
       </div>
-      <style>{"@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}@keyframes bounce{from{transform:scale(1)}to{transform:scale(1.05)}}@keyframes dot{from{opacity:.3;transform:scale(.8)}to{opacity:1;transform:scale(1.2)}}"}</style>
+      <style>{"@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}@keyframes bounce{from{transform:scale(1)}to{transform:scale(1.04)}}@keyframes dot{from{opacity:.3;transform:scale(.8)}to{opacity:1;transform:scale(1.3)}}@keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}"}</style>
     </div>);
 }
 
@@ -101,24 +183,15 @@ function LiveDrawView(){
 function PublicRoundView(){
   const p=new URLSearchParams(window.location.search);
   const rid=p.get("rid"),token=p.get("token");
-  const [round,setRound]=useState(null);
-  const [pays,setPays]=useState([]);
-  const [loading,setLoading]=useState(true);
-
+  const [round,setRound]=useState(null);const [pays,setPays]=useState([]);const [loading,setLoading]=useState(true);
   useEffect(()=>{
-    Promise.all([
-      supabase.from("rounds").select("*").eq("id",rid).eq("share_token",token).single(),
-      supabase.from("pays").select("*").eq("round_id",rid)
-    ]).then(([{data:r},{data:ps}])=>{setRound(r);setPays(ps||[]);setLoading(false);});
-    const ch=supabase.channel("pub-"+rid).on("postgres_changes",{event:"*",schema:"public",table:"pays",filter:"round_id=eq."+rid},({new:p2})=>setPays(prev=>prev.map(p=>p.id===p2.id?p2:p))).subscribe();
+    Promise.all([supabase.from("rounds").select("*").eq("id",rid).eq("share_token",token).single(),supabase.from("pays").select("*").eq("round_id",rid)]).then(([{data:r},{data:ps}])=>{setRound(r);setPays(ps||[]);setLoading(false);});
+    const ch=supabase.channel("pub-"+rid).on("postgres_changes",{event:"*",schema:"public",table:"pays",filter:"round_id=eq."+rid},({new:pay})=>setPays(prev=>{const idx=prev.findIndex(x=>x.id===pay.id);if(idx>=0){const n=[...prev];n[idx]=pay;return n;}return[...prev,pay];})).subscribe();
     return()=>supabase.removeChannel(ch);
   },[rid]);
-
   if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
   if(!round)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
-
-  const totalPot=pays.reduce((s,p)=>s+Number(p.amt),0);
-  const paidCount=pays.filter(p=>p.paid).length;
+  const totalPot=pays.reduce((s,p)=>s+Number(p.amt),0),paidCount=pays.filter(p=>p.paid).length;
   return(
     <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",fontFamily:"Tajawal,sans-serif",padding:24}}>
       <div style={{maxWidth:480,margin:"0 auto"}}>
@@ -127,32 +200,23 @@ function PublicRoundView(){
           <h1 style={{color:GM,fontSize:26,fontWeight:800,margin:0}}>الجمعية الدوّارة</h1>
           <p style={{color:"rgba(255,255,255,.5)",fontSize:13,marginTop:4}}>الجولة #{round.round_num}</p>
         </div>
-        {round.winner_id?(
-          <div style={{background:"linear-gradient(135deg,#0F6E56,#1D9E75)",borderRadius:20,padding:"24px 28px",marginBottom:20,textAlign:"center"}}>
-            <div style={{fontSize:36,marginBottom:8}}>🏆</div>
-            <div style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:4}}>الفائز بهذه الجولة</div>
-            <div style={{color:"#fff",fontSize:28,fontWeight:800}}>{round.winner_name}</div>
-            <div style={{color:"rgba(255,255,255,.7)",fontSize:14,marginTop:8}}>إجمالي المبلغ: <strong style={{color:"#fff"}}>{totalPot.toLocaleString()} ر.س</strong></div>
-          </div>):(
-          <div style={{background:"rgba(255,255,255,.05)",border:"2px dashed rgba(255,255,255,.15)",borderRadius:20,padding:28,textAlign:"center",marginBottom:20}}>
-            <div style={{fontSize:36,marginBottom:8}}>⏳</div>
-            <div style={{color:"rgba(255,255,255,.6)",fontSize:16}}>لم يتم اختيار الفائز بعد</div>
-          </div>)}
+        <div style={{background:"linear-gradient(135deg,#0F6E56,#1D9E75)",borderRadius:20,padding:"24px 28px",marginBottom:20,textAlign:"center"}}>
+          <div style={{fontSize:36,marginBottom:8}}>🏆</div>
+          <div style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:4}}>الفائز</div>
+          <div style={{color:"#fff",fontSize:28,fontWeight:800}}>{round.winner_name}</div>
+          <div style={{color:"rgba(255,255,255,.7)",fontSize:14,marginTop:8}}>إجمالي: <strong style={{color:"#fff"}}>{totalPot.toLocaleString()} ر.س</strong></div>
+        </div>
         <div style={{background:"rgba(255,255,255,.05)",borderRadius:16,padding:"18px 20px"}}>
           <div style={{color:"rgba(255,255,255,.7)",fontSize:13,fontWeight:700,marginBottom:14,display:"flex",justifyContent:"space-between"}}>
-            <span>المشاركون</span><span style={{color:GM}}>دفعوا {paidCount} من {pays.length}</span>
+            <span>المدفوعات</span><span style={{color:GM}}>{paidCount}/{pays.length}</span>
           </div>
           {pays.map((pay,i)=>(
             <div key={pay.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-              <div style={{width:38,height:38,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13}}>{ini(pay.member_name||"")}</div>
-              <div style={{flex:1}}>
-                <div style={{color:"#fff",fontSize:14,fontWeight:700}}>{pay.member_name} {round.winner_id===pay.member_id?"🏆":""}</div>
-                <div style={{color:"rgba(255,255,255,.4)",fontSize:12}}>{Number(pay.amt).toLocaleString()} ر.س</div>
-              </div>
-              <span style={{fontSize:12,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓ دفع":"⏳ لم يدفع"}</span>
+              <div style={{width:36,height:36,borderRadius:"50%",background:AVBG[i%6][0],color:AVBG[i%6][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(pay.member_name||"")}</div>
+              <div style={{flex:1}}><div style={{color:"#fff",fontSize:13,fontWeight:700}}>{pay.member_name}</div><div style={{color:"rgba(255,255,255,.4)",fontSize:11}}>{Number(pay.amt).toLocaleString()} ر.س</div></div>
+              <span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓":"⏳"}</span>
             </div>))}
         </div>
-        <div style={{textAlign:"center",marginTop:24,color:"rgba(255,255,255,.25)",fontSize:11}}>نظام الجمعية الدوّارة · هذا الرابط للعرض فقط</div>
       </div>
     </div>);
 }
@@ -160,12 +224,7 @@ function PublicRoundView(){
 // ══ LOGIN ══
 function LoginScreen({onLogin}){
   const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);
-  async function handleLogin(){
-    setLoading(true);setErr("");
-    const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();
-    if(data)onLogin(data);else setErr("رقم الجوال أو الرمز السري غير صحيح");
-    setLoading(false);
-  }
+  async function handleLogin(){setLoading(true);setErr("");const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();if(data)onLogin(data);else setErr("رقم الجوال أو الرمز السري غير صحيح");setLoading(false);}
   return(
     <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
       <div style={{width:"100%",maxWidth:380}}>
@@ -175,14 +234,8 @@ function LoginScreen({onLogin}){
           <p style={{color:"rgba(255,255,255,.4)",fontSize:13,marginTop:6}}>إدارة المدخرات الجماعية</p>
         </div>
         <div style={{background:"rgba(255,255,255,.07)",borderRadius:20,padding:28,border:"1px solid rgba(255,255,255,.1)"}}>
-          <div style={{marginBottom:16}}>
-            <label style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>رقم الجوال</label>
-            <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="05xxxxxxxx" onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:16,fontFamily:"Tajawal,sans-serif",outline:"none",boxSizing:"border-box",direction:"rtl"}}/>
-          </div>
-          <div style={{marginBottom:20}}>
-            <label style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>الرمز السري</label>
-            <input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="••••" onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:20,fontFamily:"Tajawal,sans-serif",outline:"none",boxSizing:"border-box",direction:"rtl",letterSpacing:4}}/>
-          </div>
+          <div style={{marginBottom:16}}><label style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>رقم الجوال</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="05xxxxxxxx" onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:16,fontFamily:"Tajawal,sans-serif",outline:"none",boxSizing:"border-box",direction:"rtl"}}/></div>
+          <div style={{marginBottom:20}}><label style={{color:"rgba(255,255,255,.6)",fontSize:12,fontWeight:700,display:"block",marginBottom:6}}>الرمز السري</label><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="••••" onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:20,fontFamily:"Tajawal,sans-serif",outline:"none",boxSizing:"border-box",direction:"rtl",letterSpacing:4}}/></div>
           {err&&<div style={{background:"#FCE4EC",color:"#880E4F",borderRadius:10,padding:"10px 14px",fontSize:13,marginBottom:16,textAlign:"center"}}>{err}</div>}
           <button onClick={handleLogin} disabled={loading} style={{width:"100%",padding:13,borderRadius:12,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",color:"#fff",fontSize:16,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{loading?"جاري التحقق...":"تسجيل الدخول"}</button>
         </div>
@@ -193,30 +246,14 @@ function LoginScreen({onLogin}){
 // ══ RESET MODAL ══
 function ResetModal({onClose,onReset}){
   const [selected,setSelected]=useState(null);
-  const options=[
-    {id:"winners", label:"إعادة تعيين الفائزين",    icon:"🔄",desc:"يمسح won_round فقط — البيانات تبقى",   color:"#E3F2FD",tc:"#1565C0"},
-    {id:"rounds",  label:"Reset الجولات والمدفوعات",icon:"🗑️",desc:"يحذف الجولات ويبدأ من #1",              color:"#FFF3E0",tc:"#E65100"},
-    {id:"history", label:"Reset سجل المعاملات",     icon:"📋",desc:"يمسح سجل المعاملات فقط",                color:"#F3E5F5",tc:"#6A1B9A"},
-    {id:"members", label:"Reset الأعضاء",           icon:"👥",desc:"يحذف كل الأعضاء",                       color:"#FCE4EC",tc:"#880E4F"},
-    {id:"full",    label:"Reset كامل للنظام",       icon:"⚠️",desc:"يمسح كل شيء ويبدأ من الصفر",           color:"#FFEBEE",tc:"#C62828"},
-  ];
+  const options=[{id:"winners",label:"إعادة تعيين الفائزين",icon:"🔄",desc:"يمسح won_round فقط",color:"#E3F2FD",tc:"#1565C0"},{id:"rounds",label:"Reset الجولات والمدفوعات",icon:"🗑️",desc:"يحذف الجولات ويبدأ من #1",color:"#FFF3E0",tc:"#E65100"},{id:"history",label:"Reset سجل المعاملات",icon:"📋",desc:"يمسح السجل فقط",color:"#F3E5F5",tc:"#6A1B9A"},{id:"members",label:"Reset الأعضاء",icon:"👥",desc:"يحذف كل الأعضاء",color:"#FCE4EC",tc:"#880E4F"},{id:"full",label:"Reset كامل للنظام",icon:"⚠️",desc:"يمسح كل شيء",color:"#FFEBEE",tc:"#C62828"}];
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}} dir="rtl">
       <div style={{background:sf,borderRadius:20,padding:28,width:460,maxWidth:"95vw"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <h3 style={{fontSize:18,fontWeight:800,margin:0,color:"#C62828"}}>⚠️ إعادة تعيين النظام</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#5A7A72"}}>×</button>
-        </div>
-        {options.map(o=>(
-          <div key={o.id} onClick={()=>setSelected(o.id)} style={{border:"2px solid "+(selected===o.id?"#C62828":bd),borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",background:selected===o.id?o.color:"transparent",transition:"all .15s"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:20}}>{o.icon}</span>
-              <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:selected===o.id?o.tc:"#1A2E28"}}>{o.label}</div><div style={{fontSize:12,color:"#5A7A72",marginTop:2}}>{o.desc}</div></div>
-              {selected===o.id&&<span style={{color:"#C62828",fontSize:18}}>✓</span>}
-            </div>
-          </div>))}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h3 style={{fontSize:18,fontWeight:800,margin:0,color:"#C62828"}}>⚠️ إعادة تعيين النظام</h3><button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#5A7A72"}}>×</button></div>
+        {options.map(o=><div key={o.id} onClick={()=>setSelected(o.id)} style={{border:"2px solid "+(selected===o.id?"#C62828":bd),borderRadius:10,padding:"12px 14px",marginBottom:8,cursor:"pointer",background:selected===o.id?o.color:"transparent"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>{o.icon}</span><div style={{flex:1}}><div style={{fontWeight:700,fontSize:14,color:selected===o.id?o.tc:"#1A2E28"}}>{o.label}</div><div style={{fontSize:12,color:"#5A7A72"}}>{o.desc}</div></div>{selected===o.id&&<span style={{color:"#C62828"}}>✓</span>}</div></div>)}
         <div style={{display:"flex",gap:10,marginTop:16}}>
-          <button onClick={()=>{if(!selected)return;const op=options.find(o=>o.id===selected);if(window.confirm("هل أنت متأكد من "+op.label+"؟ لا يمكن التراجع."))onReset(selected);}} disabled={!selected} style={{flex:1,padding:11,borderRadius:10,background:selected?"#C62828":"#ccc",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:selected?"pointer":"not-allowed",fontFamily:"Tajawal,sans-serif"}}>تنفيذ العملية</button>
+          <button onClick={()=>{if(!selected)return;const op=options.find(o=>o.id===selected);if(window.confirm("هل أنت متأكد من "+op.label+"؟ لا يمكن التراجع."))onReset(selected);}} disabled={!selected} style={{flex:1,padding:11,borderRadius:10,background:selected?"#C62828":"#ccc",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:selected?"pointer":"not-allowed",fontFamily:"Tajawal,sans-serif"}}>تنفيذ</button>
           <button onClick={onClose} style={{flex:1,padding:11,borderRadius:10,background:bg,color:"#5A7A72",fontSize:14,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إلغاء</button>
         </div>
       </div>
@@ -240,35 +277,22 @@ export default function App(){
   const [activePayRound,setActivePayRound]=useState(null);
   const [liveDraw,setLiveDraw]=useState(null);
   const spinRef=useRef(null);
-  const shareParams=parseShareParams();
+
+  const shareParams=new URLSearchParams(window.location.search);
+  const viewType=shareParams.get("view");
 
   useEffect(()=>{loadAll();},[]);
-
   async function loadAll(){
     setLoading(true);
-    const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
-      supabase.from("members").select("*").order("created_at"),
-      supabase.from("rounds").select("*").order("round_num"),
-      supabase.from("history").select("*").order("created_at",{ascending:false}),
-      supabase.from("settings").select("*"),
-      supabase.from("pays").select("*"),
-      supabase.from("users").select("*")
-    ]);
+    const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([supabase.from("members").select("*").order("created_at"),supabase.from("rounds").select("*").order("round_num"),supabase.from("history").select("*").order("created_at",{ascending:false}),supabase.from("settings").select("*"),supabase.from("pays").select("*"),supabase.from("users").select("*")]);
     const sObj={};(settings||[]).forEach(s=>{try{sObj[s.key]=JSON.parse(s.value);}catch{sObj[s.key]=s.value;}});
     const pObj={};(pays||[]).forEach(p=>{if(!pObj[p.round_id])pObj[p.round_id]=[];pObj[p.round_id].push(p);});
-    const roundsWithPays=(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])}));
-    setState({members:members||[],rounds:roundsWithPays,hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
+    setState({members:members||[],rounds:(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])})),hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
     setLoading(false);
   }
 
   useEffect(()=>{
-    const ch=supabase.channel("all")
-      .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll())
-      .subscribe();
+    const ch=supabase.channel("all").on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll()).subscribe();
     return()=>supabase.removeChannel(ch);
   },[]);
 
@@ -282,20 +306,19 @@ export default function App(){
   async function handleReset(type){
     setResetModal(false);
     try{
-      if(type==="winners"){await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");showToast("✅ تم إعادة تعيين الفائزين");}
-      else if(type==="rounds"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");showToast("✅ تم Reset الجولات");}
-      else if(type==="history"){await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");showToast("✅ تم مسح السجل");}
-      else if(type==="members"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");showToast("✅ تم حذف الأعضاء");}
-      else if(type==="full"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("live_draw").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");showToast("✅ تم Reset كامل");}
-      loadAll();
+      if(type==="winners")await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");
+      else if(type==="rounds"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");}
+      else if(type==="history")await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
+      else if(type==="members"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");}
+      else if(type==="full"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("live_draw").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");}
+      showToast("✅ تمت العملية بنجاح");loadAll();
     }catch(e){showToast("خطأ: "+e.message,"error");}
   }
 
   async function addMember(name,phone,amt){
     await supabase.from("members").insert({name,phone,amt:Number(amt)});
     const{data:all}=await supabase.from("members").select("id");
-    const ids=(all||[]).map(x=>x.id);
-    await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");
+    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants");
     await supabase.from("history").insert({type:"join",text:"انضم "+name,amt:Number(amt)});
     showToast("تم إضافة "+name);
   }
@@ -306,23 +329,24 @@ export default function App(){
     showToast("تم الحذف");
   }
 
-  // ══ LIVE DRAW FUNCTIONS ══
+  // ══ LIVE DRAW — يُنشئ القرعة ويحتفظ بالرابط ثابتاً ══
   async function startLiveDraw(){
     const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     if(!eligible.length){showToast("لا يوجد مشاركون مؤهلون","error");return;}
     const parts=eligible.map(mid=>state.members.find(x=>x.id===mid)?.name||"").filter(Boolean);
-    const{data:draw}=await supabase.from("live_draw").insert({round_num:curRoundNum,status:"waiting",participants:parts,current_name:"",winner_name:""}).select().single();
+    const{data:draw}=await supabase.from("live_draw").insert({round_num:curRoundNum,status:"waiting",participants:parts,current_name:"",winner_name:"",is_confirmed:false}).select().single();
     setLiveDraw(draw);
     setLiveModal({drawId:draw.id,shareToken:draw.share_token});
+    showToast("📺 تم إنشاء رابط القرعة المباشرة!");
   }
 
   async function runLiveDraw(){
     if(!liveDraw)return;
-    const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     const parts=liveDraw.participants||[];
-    await supabase.from("live_draw").update({status:"spinning"}).eq("id",liveDraw.id);
+    const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
+    await supabase.from("live_draw").update({status:"spinning",updated_at:new Date().toISOString()}).eq("id",liveDraw.id);
     setSpinning(true);setPendingWinner(null);
-    let count=0,total=25+Math.floor(Math.random()*15);
+    let count=0,total=28+Math.floor(Math.random()*12);
     const interval=setInterval(async()=>{
       const name=parts[Math.floor(Math.random()*parts.length)];
       setSpinDisplay(name);
@@ -341,6 +365,7 @@ export default function App(){
     spinRef.current=interval;
   }
 
+  // ══ تأكيد الفوز — يربط القرعة بالجولة ويبقي الرابط حياً ══
   async function confirmWin(winner,method){
     if(!winner)return;
     const{data:newRound}=await supabase.from("rounds").insert({round_num:curRoundNum,winner_id:winner.id,winner_name:winner.name,draw_method:method,date:tod(),participants:curParticipants}).select().single();
@@ -348,14 +373,18 @@ export default function App(){
     await supabase.from("pays").insert(payRecs);
     await supabase.from("members").update({won_round:curRoundNum}).eq("id",winner.id);
     const{data:all}=await supabase.from("members").select("id");
-    const ids=(all||[]).map(x=>x.id);
     await supabase.from("settings").update({value:String(curRoundNum+1)}).eq("key","current_round");
-    await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");
+    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants");
     await supabase.from("history").insert({type:"win",text:"فاز "+winner.name+" بالجولة #"+curRoundNum,amt:totalPot});
-    if(liveDraw)await supabase.from("live_draw").delete().eq("id",liveDraw.id);
-    setLiveDraw(null);setPendingWinner(null);setSpinDisplay("");setLiveModal(null);
+    // ربط القرعة بالجولة وتحديث الحالة (الرابط يبقى ثابتاً)
+    if(liveDraw){
+      await supabase.from("live_draw").update({round_id:newRound.id,is_confirmed:true,status:"done",updated_at:new Date().toISOString()}).eq("id",liveDraw.id);
+    }
+    setPendingWinner(null);setSpinDisplay("");
     showToast("🏆 تم تسجيل فوز "+winner.name);
+    // رابط المشاركة العادي للجولة
     setShareModal({roundId:newRound.id,shareToken:newRound.share_token});
+    setLiveModal(prev=>prev?{...prev,confirmed:true}:null);
     setTab("rounds");
   }
 
@@ -367,27 +396,27 @@ export default function App(){
   async function addUser(name,phone,pin,role){await supabase.from("users").insert({name,phone,pin,role});showToast("تم إضافة "+name);}
   async function removeUser(uid){await supabase.from("users").delete().eq("id",uid);showToast("تم الحذف");}
 
-  if(shareParams?.type==="live"&&!loading)return <LiveDrawView/>;
-  if(shareParams?.type==="round"&&!loading)return <PublicRoundView/>;
+  // ══ ROUTING ══
+  if(viewType==="live"&&!loading)return <LiveDrawView/>;
+  if(viewType==="round"&&!loading)return <PublicRoundView/>;
   if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
   if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)}/>;
 
   const isSuperAdmin=currentUser.role==="superadmin";
   const isAdmin=["superadmin","admin"].includes(currentUser.role);
   const isMember=currentUser.role==="member";
+  const roleInfo=ROLES[currentUser.role]||ROLES.member;
 
   const TABS=[
-    {id:"members", label:"الأعضاء",       icon:"👥",show:!isMember},
-    {id:"myinfo",  label:"بياناتي",        icon:"👤",show:isMember},
-    {id:"newround",label:"جولة جديدة",    icon:"🎲",show:isAdmin},
-    {id:"pay",     label:"المدفوعات",      icon:"💳",show:!isMember},
-    {id:"rounds",  label:"سجل الجولات",   icon:"📋",show:true},
-    {id:"history", label:"المعاملات",      icon:"🕐",show:!isMember},
-    {id:"users",   label:"المستخدمون",    icon:"🔐",show:isSuperAdmin},
-    {id:"reset",   label:"إعادة التعيين", icon:"⚠️",show:isSuperAdmin},
+    {id:"members",label:"الأعضاء",icon:"👥",show:!isMember},
+    {id:"myinfo",label:"بياناتي",icon:"👤",show:isMember},
+    {id:"newround",label:"جولة جديدة",icon:"🎲",show:isAdmin},
+    {id:"pay",label:"المدفوعات",icon:"💳",show:!isMember},
+    {id:"rounds",label:"سجل الجولات",icon:"📋",show:true},
+    {id:"history",label:"المعاملات",icon:"🕐",show:!isMember},
+    {id:"users",label:"المستخدمون",icon:"🔐",show:isSuperAdmin},
+    {id:"reset",label:"إعادة التعيين",icon:"⚠️",show:isSuperAdmin},
   ].filter(t=>t.show);
-
-  const roleInfo=ROLES[currentUser.role]||ROLES.member;
 
   return(
     <div dir="rtl" style={{minHeight:"100vh",background:bg,fontFamily:"Tajawal,sans-serif",color:"#1A2E28",display:"flex"}}>
@@ -395,34 +424,47 @@ export default function App(){
 
       {/* LIVE MODAL */}
       {liveModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}} dir="rtl">
-          <div style={{background:sf,borderRadius:20,padding:28,width:440,maxWidth:"95vw"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}} dir="rtl">
+          <div style={{background:sf,borderRadius:20,padding:28,width:460,maxWidth:"95vw"}}>
             <div style={{textAlign:"center",marginBottom:20}}>
-              <div style={{fontSize:48,marginBottom:8}}>🎰</div>
-              <h3 style={{fontSize:18,fontWeight:800,margin:0}}>القرعة المباشرة جاهزة!</h3>
-              <p style={{color:"#5A7A72",fontSize:13,marginTop:6}}>شارك الرابط مع المشاركين ليشاهدوا القرعة مباشرة</p>
+              <div style={{fontSize:44,marginBottom:8}}>📺</div>
+              <h3 style={{fontSize:18,fontWeight:800,margin:0}}>القرعة المباشرة</h3>
+              <p style={{color:"#5A7A72",fontSize:13,marginTop:6}}>الرابط ثابت — يشاهد المشاركون القرعة ثم المدفوعات</p>
             </div>
-            <div style={{background:bg,borderRadius:10,padding:"12px 14px",marginBottom:16,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildLiveLink(liveModal.drawId,liveModal.shareToken)}</div>
-            <div style={{display:"flex",gap:10,marginBottom:12}}>
-              <button onClick={()=>{navigator.clipboard.writeText(buildLiveLink(liveModal.drawId,liveModal.shareToken));showToast("تم نسخ رابط القرعة!");}} style={{flex:1,padding:11,borderRadius:10,background:"#1565C0",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
-              <button onClick={()=>window.open(buildLiveLink(liveModal.drawId,liveModal.shareToken),"_blank")} style={{flex:1,padding:11,borderRadius:10,background:bg,color:"#5A7A72",fontSize:14,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>👁️ معاينة</button>
-            </div>
-            {!spinning&&!pendingWinner&&(
-              <button onClick={runLiveDraw} style={{width:"100%",padding:13,borderRadius:10,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",color:"#fff",fontSize:16,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>🎲 ابدأ القرعة المباشرة</button>)}
+
+            {/* RINK DISPLAY */}
             {spinning&&(
-              <div style={{textAlign:"center",padding:16,background:GL,borderRadius:10}}>
-                <div style={{fontSize:24,fontWeight:700,color:G}}>{spinDisplay}</div>
-                <div style={{fontSize:12,color:"#5A7A72",marginTop:4}}>القرعة تدور... يشاهدها المشاركون الآن</div>
+              <div style={{background:"linear-gradient(135deg,#0F1923,#0a2820)",borderRadius:12,padding:16,marginBottom:14,textAlign:"center",border:"1px solid rgba(29,158,117,.3)"}}>
+                <div style={{color:"#fff",fontSize:28,fontWeight:800,animation:"bounce .15s ease-in-out infinite"}}>{spinDisplay}</div>
+                <div style={{color:GM,fontSize:12,marginTop:6}}>يشاهدها المشاركون الآن 🔴</div>
               </div>)}
             {pendingWinner&&!spinning&&(
-              <div>
-                <div style={{textAlign:"center",padding:16,background:GL,borderRadius:10,marginBottom:12}}>
-                  <div style={{fontSize:13,color:G,marginBottom:4}}>🏆 الفائز</div>
-                  <div style={{fontSize:24,fontWeight:800,color:GD}}>{pendingWinner.name}</div>
-                </div>
-                <button onClick={()=>confirmWin(pendingWinner,"live")} style={{width:"100%",padding:13,borderRadius:10,background:G,color:"#fff",fontSize:15,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>✅ تأكيد وتسجيل الجولة</button>
+              <div style={{background:GL,border:"2px solid "+GM,borderRadius:12,padding:14,marginBottom:14,textAlign:"center"}}>
+                <div style={{fontSize:11,color:G,marginBottom:4}}>🏆 الفائز</div>
+                <div style={{fontSize:26,fontWeight:800,color:GD}}>{pendingWinner.name}</div>
               </div>)}
-            <button onClick={()=>{if(!pendingWinner&&!spinning)setLiveModal(null);}} style={{width:"100%",padding:9,borderRadius:10,background:"transparent",color:"#8FADA6",fontSize:13,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginTop:8}}>إغلاق</button>
+            {!spinning&&!pendingWinner&&!liveModal.confirmed&&(
+              <div style={{background:"#F0F7FF",borderRadius:10,padding:12,marginBottom:14,textAlign:"center"}}>
+                <div style={{fontSize:13,color:"#1565C0"}}>⏳ المشاركون يشاهدون شاشة الانتظار</div>
+              </div>)}
+            {liveModal.confirmed&&(
+              <div style={{background:GL,borderRadius:10,padding:12,marginBottom:14,textAlign:"center"}}>
+                <div style={{fontSize:13,color:G}}>✅ الجولة مؤكدة — المشاركون يرون المدفوعات الآن</div>
+              </div>)}
+
+            {/* LINK */}
+            <div style={{background:bg,borderRadius:10,padding:"10px 14px",marginBottom:14,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildLiveLink(liveModal.drawId,liveModal.shareToken)}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <button onClick={()=>{navigator.clipboard.writeText(buildLiveLink(liveModal.drawId,liveModal.shareToken));showToast("تم نسخ رابط القرعة!");}} style={{padding:10,borderRadius:9,background:"#1565C0",color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
+              <button onClick={()=>window.open(buildLiveLink(liveModal.drawId,liveModal.shareToken),"_blank")} style={{padding:10,borderRadius:9,background:bg,color:"#5A7A72",fontSize:13,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>👁️ معاينة</button>
+            </div>
+
+            {/* ACTIONS */}
+            {!spinning&&!pendingWinner&&!liveModal.confirmed&&(
+              <button onClick={runLiveDraw} style={{width:"100%",padding:13,borderRadius:10,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",color:"#fff",fontSize:15,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginBottom:8}}>🎲 ابدأ القرعة المباشرة</button>)}
+            {pendingWinner&&!spinning&&!liveModal.confirmed&&(
+              <button onClick={()=>confirmWin(pendingWinner,"live")} style={{width:"100%",padding:13,borderRadius:10,background:G,color:"#fff",fontSize:15,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginBottom:8}}>✅ تأكيد وتسجيل الجولة</button>)}
+            <button onClick={()=>{if(!spinning)setLiveModal(null);}} style={{width:"100%",padding:8,borderRadius:9,background:"transparent",color:"#8FADA6",fontSize:12,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إغلاق النافذة (الرابط يبقى نشطاً)</button>
           </div>
         </div>)}
 
@@ -430,11 +472,7 @@ export default function App(){
       {shareModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:998,display:"flex",alignItems:"center",justifyContent:"center"}} dir="rtl">
           <div style={{background:sf,borderRadius:20,padding:28,width:420,maxWidth:"95vw"}}>
-            <div style={{textAlign:"center",marginBottom:20}}>
-              <div style={{fontSize:48,marginBottom:8}}>🎉</div>
-              <h3 style={{fontSize:18,fontWeight:800,margin:0}}>تم تسجيل الجولة!</h3>
-              <p style={{color:"#5A7A72",fontSize:13,marginTop:6}}>شارك رابط نتيجة الجولة مع المشاركين</p>
-            </div>
+            <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:48,marginBottom:8}}>🎉</div><h3 style={{fontSize:18,fontWeight:800,margin:0}}>تم تسجيل الجولة!</h3></div>
             <div style={{background:bg,borderRadius:10,padding:"12px 14px",marginBottom:16,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildShareLink(shareModal.roundId,shareModal.shareToken)}</div>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>{navigator.clipboard.writeText(buildShareLink(shareModal.roundId,shareModal.shareToken));showToast("تم النسخ!");}} style={{flex:1,padding:11,borderRadius:10,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
@@ -475,7 +513,7 @@ export default function App(){
         </div>
         {tab==="members"&&<MembersTab state={state} canWrite={canDo(currentUser,"members_write")} onAdd={addMember} onRemove={removeMember}/>}
         {tab==="myinfo"&&<MyInfoTab state={state} currentUser={currentUser}/>}
-        {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startDraw} onStartLiveDraw={startLiveDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");}} liveDraw={liveDraw}/>}
+        {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startLocalDraw} onStartLiveDraw={startLiveDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");}} liveDraw={liveDraw} liveModal={liveModal}/>}
         {tab==="pay"&&<PayTab state={state} canWrite={canDo(currentUser,"pays_write")} activePayRound={activePayRound} setActivePayRound={setActivePayRound} onToggle={togglePay} onPayAll={async(roundId,pays)=>{for(const p of pays){if(!p.paid)await supabase.from("pays").update({paid:true,paid_date:tod()}).eq("id",p.id);}showToast("تم تسجيل كل الدفعات");}}/>}
         {tab==="rounds"&&<RoundsTab state={state} onShare={r=>setShareModal({roundId:r.id,shareToken:r.share_token})}/>}
         {tab==="history"&&<HistoryTab state={state}/>}
@@ -483,7 +521,7 @@ export default function App(){
       </main>
     </div>);
 
-  function startDraw(){
+  function startLocalDraw(){
     const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     if(!eligible.length){showToast("لا يوجد مشاركون مؤهلون","error");return;}
     setSpinning(true);setPendingWinner(null);
@@ -543,17 +581,16 @@ function MembersTab({state,canWrite,onAdd,onRemove}){
           </div>
         </div>)}
       <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>الأعضاء ({sorted.length})</div>
         {!sorted.length&&<div style={{textAlign:"center",padding:32,color:"#8FADA6"}}>لا يوجد أعضاء بعد</div>}
         {sorted.map((m,rank)=>{
           const ci=state.members.indexOf(m)%6,paidCount=state.rounds.filter(r=>r.pays?.find(p=>p.member_id===m.id&&p.paid)).length,partCount=state.rounds.filter(r=>r.pays?.find(p=>p.member_id===m.id)).length,pct=partCount?Math.round(paidCount/partCount*100):0;
           return(
             <div key={m.id} style={{border:"1px solid #E2EAE7",borderRadius:10,padding:"13px 15px",marginBottom:10}}>
               <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:9}}>
-                <span style={{width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",background:"#F5F7F6",fontSize:rank<3?14:11,color:"#5A7A72",fontWeight:700}}>{rank<3?["🥇","🥈","🥉"][rank]:rank+1}</span>
+                <span style={{width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:"50%",background:"#F5F7F6",fontSize:rank<3?14:11,color:"#5A7A72",fontWeight:700}}>{rank<3?medals[rank]:rank+1}</span>
                 <div style={{width:40,height:40,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13}}>{ini(m.name)}</div>
                 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{m.name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{m.phone} · {Number(m.amt).toLocaleString()} ر.س/شهر</div></div>
-                {m.won_round&&<span style={{fontSize:11,padding:"3px 9px",borderRadius:20,fontWeight:700,background:"#E3F2FD",color:"#1565C0"}}>🏆 فاز #{m.won_round}</span>}
+                {m.won_round&&<span style={{fontSize:11,padding:"3px 9px",borderRadius:20,fontWeight:700,background:"#E3F2FD",color:"#1565C0"}}>🏆 #{m.won_round}</span>}
                 {canWrite&&<button onClick={()=>{if(window.confirm("حذف "+m.name+"؟"))onRemove(m.id,m.name);}} style={{padding:"3px 10px",borderRadius:6,background:"#FCE4EC",color:"#880E4F",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>حذف</button>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:9}}>
@@ -565,13 +602,14 @@ function MembersTab({state,canWrite,onAdd,onRemove}){
     </div>);
 }
 
-function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMode,setDrawMode,pendingWinner,setPendingWinner,spinning,spinDisplay,onStartDraw,onStartLiveDraw,onConfirm,onUpdateParticipants,liveDraw}){
+function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMode,setDrawMode,pendingWinner,setPendingWinner,spinning,spinDisplay,onStartDraw,onStartLiveDraw,onConfirm,onUpdateParticipants,liveDraw,liveModal}){
   const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
-  if(curRound)return(<div style={{background:"#fff",borderRadius:14,padding:28,maxWidth:500}}><div style={{background:"#E3F2FD",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1565C0"}}>الجولة #{curRound.round_num} مكتملة — الفائز: <strong>{curRound.winner_name}</strong></div></div>);
+  if(curRound)return <div style={{background:"#fff",borderRadius:14,padding:28,maxWidth:500}}><div style={{background:"#E3F2FD",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1565C0"}}>الجولة #{curRound.round_num} مكتملة — الفائز: <strong>{curRound.winner_name}</strong></div></div>;
   return(
     <div>
       <div style={{marginBottom:20}}><h2 style={{fontSize:21,fontWeight:700,margin:0}}>إعداد الجولة #{curRoundNum}</h2></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        {/* PARTICIPANTS */}
         <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:14,display:"flex",justifyContent:"space-between"}}>المشاركون
             <div style={{display:"flex",gap:6}}>
@@ -580,45 +618,45 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
             </div>
           </div>
           {state.members.map(m=>{const ci=state.members.indexOf(m)%6,checked=curParticipants.includes(m.id);return(
-            <div key={m.id} onClick={()=>{const n=checked?curParticipants.filter(x=>x!==m.id):[...curParticipants,m.id];onUpdateParticipants(n);}} style={{border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"11px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:11,background:checked?"#E1F5EE":"transparent"}}>
-              <div style={{width:20,height:20,borderRadius:5,border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),display:"flex",alignItems:"center",justifyContent:"center",background:checked?"#0F6E56":"transparent",color:"#fff",fontSize:13}}>{checked?"✓":""}</div>
-              <div style={{width:36,height:36,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(m.name)}</div>
-              <div style={{flex:1}}><div style={{fontWeight:700,fontSize:14}}>{m.name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{Number(m.amt).toLocaleString()} ر.س</div></div>
-              {m.won_round&&<span style={{fontSize:10,background:"#E3F2FD",color:"#1565C0",padding:"1px 7px",borderRadius:10,fontWeight:700}}>فاز</span>}
+            <div key={m.id} onClick={()=>{const n=checked?curParticipants.filter(x=>x!==m.id):[...curParticipants,m.id];onUpdateParticipants(n);}} style={{border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"10px 13px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:10,background:checked?"#E1F5EE":"transparent"}}>
+              <div style={{width:18,height:18,borderRadius:4,border:"2px solid "+(checked?"#0F6E56":"#E2EAE7"),display:"flex",alignItems:"center",justifyContent:"center",background:checked?"#0F6E56":"transparent",color:"#fff",fontSize:11,flexShrink:0}}>{checked?"✓":""}</div>
+              <div style={{width:34,height:34,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,flexShrink:0}}>{ini(m.name)}</div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.name}</div><div style={{fontSize:11,color:"#5A7A72"}}>{Number(m.amt).toLocaleString()} ر.س</div></div>
+              {m.won_round&&<span style={{fontSize:10,background:"#E3F2FD",color:"#1565C0",padding:"1px 6px",borderRadius:8,fontWeight:700,flexShrink:0}}>فاز</span>}
             </div>);})}
-          <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #E2EAE7",display:"flex",justifyContent:"space-between",fontSize:13}}>
+          <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #E2EAE7",display:"flex",justifyContent:"space-between",fontSize:13}}>
             <span style={{color:"#5A7A72"}}>الإجمالي:</span>
-            <span style={{fontWeight:700,fontSize:16}}>{totalPot.toLocaleString()} ر.س ({curParticipants.length} مشارك)</span>
+            <span style={{fontWeight:700}}>{totalPot.toLocaleString()} ر.س ({curParticipants.length})</span>
           </div>
         </div>
+
+        {/* DRAW METHOD */}
         <div style={{background:"#fff",borderRadius:14,padding:"18px 22px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
-          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>اختيار طريقة القرعة</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:10,marginBottom:16}}>
-            <button onClick={()=>setDrawMode("random")} style={{padding:14,borderRadius:10,background:drawMode==="random"?"#0F6E56":"#F5F7F6",color:drawMode==="random"?"#fff":"#5A7A72",fontSize:14,fontWeight:700,border:"2px solid "+(drawMode==="random"?"#0F6E56":"#E2EAE7"),cursor:"pointer",fontFamily:"Tajawal,sans-serif",textAlign:"right",display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:24}}>🎲</span><div><div>قرعة عشوائية محلية</div><div style={{fontSize:11,opacity:.7,fontWeight:400}}>يراها المدير فقط</div></div>
-            </button>
-            <button onClick={()=>{setDrawMode("live");if(drawMode!=="live"&&curParticipants.length>0)onStartLiveDraw();}} style={{padding:14,borderRadius:10,background:drawMode==="live"?"linear-gradient(135deg,#1565C0,#1976D2)":"#F5F7F6",color:drawMode==="live"?"#fff":"#5A7A72",fontSize:14,fontWeight:700,border:"2px solid "+(drawMode==="live"?"#1565C0":"#E2EAE7"),cursor:"pointer",fontFamily:"Tajawal,sans-serif",textAlign:"right",display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:24}}>📺</span><div><div>قرعة مباشرة 🔴</div><div style={{fontSize:11,opacity:.7,fontWeight:400}}>يشاهدها الجميع في نفس الوقت</div></div>
-            </button>
-            <button onClick={()=>setDrawMode("manual")} style={{padding:14,borderRadius:10,background:drawMode==="manual"?"#6A1B9A":"#F5F7F6",color:drawMode==="manual"?"#fff":"#5A7A72",fontSize:14,fontWeight:700,border:"2px solid "+(drawMode==="manual"?"#6A1B9A":"#E2EAE7"),cursor:"pointer",fontFamily:"Tajawal,sans-serif",textAlign:"right",display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:24}}>🤝</span><div><div>اختيار بالتراضي</div><div style={{fontSize:11,opacity:.7,fontWeight:400}}>اختر الفائز يدوياً</div></div>
-            </button>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>طريقة القرعة</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+            {[["random","🎲","قرعة عشوائية","يراها المدير فقط","#0F6E56"],["live","📺","قرعة مباشرة 🔴","يشاهدها الجميع في نفس الوقت","#1565C0"],["manual","🤝","اختيار بالتراضي","اختر الفائز يدوياً","#6A1B9A"]].map(([m,ic,lb,desc,col])=>(
+              <button key={m} onClick={()=>{setDrawMode(m);if(m==="live"&&drawMode!=="live")onStartLiveDraw();}} style={{padding:"12px 14px",borderRadius:10,background:drawMode===m?col:"#F5F7F6",color:drawMode===m?"#fff":"#5A7A72",fontSize:13,fontWeight:700,border:"2px solid "+(drawMode===m?col:"#E2EAE7"),cursor:"pointer",fontFamily:"Tajawal,sans-serif",display:"flex",alignItems:"center",gap:10,textAlign:"right"}}>
+                <span style={{fontSize:22,flexShrink:0}}>{ic}</span>
+                <div><div>{lb}</div><div style={{fontSize:11,opacity:.7,fontWeight:400,marginTop:2}}>{desc}</div></div>
+              </button>))}
           </div>
+
           {drawMode==="random"&&(
             <div style={{textAlign:"center"}}>
-              <div onClick={!spinning?onStartDraw:undefined} style={{width:80,height:80,borderRadius:"50%",border:"3px solid #0F6E56",background:"#E1F5EE",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",cursor:spinning?"not-allowed":"pointer",fontSize:34,animation:spinning?"spin .12s linear infinite":"none"}}>🎲</div>
-              <div style={{fontSize:16,fontWeight:700,color:"#0F6E56",minHeight:24}}>{spinDisplay}</div>
+              <div onClick={!spinning?onStartDraw:undefined} style={{width:78,height:78,borderRadius:"50%",border:"3px solid #0F6E56",background:"#E1F5EE",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",cursor:spinning?"not-allowed":"pointer",fontSize:32,animation:spinning?"spin .12s linear infinite":"none"}}>🎲</div>
+              <div style={{fontSize:15,fontWeight:700,color:"#0F6E56",minHeight:22}}>{spinDisplay}</div>
             </div>)}
-          {drawMode==="manual"&&eligible.map(mid=>{const m=state.members.find(x=>x.id===mid);if(!m)return null;const ci=state.members.indexOf(m)%6,isSel=pendingWinner?.id===mid;return(<div key={mid} onClick={()=>setPendingWinner(m)} style={{border:"2px solid "+(isSel?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"10px 13px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10,background:isSel?"#E1F5EE":"transparent"}}><div style={{width:34,height:34,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12}}>{ini(m.name)}</div><div style={{flex:1,fontWeight:700,fontSize:14}}>{m.name}</div>{isSel&&<span style={{color:"#0F6E56"}}>✓</span>}</div>);})}
+          {drawMode==="manual"&&eligible.map(mid=>{const m=state.members.find(x=>x.id===mid);if(!m)return null;const ci=state.members.indexOf(m)%6,isSel=pendingWinner?.id===mid;return(<div key={mid} onClick={()=>setPendingWinner(m)} style={{border:"2px solid "+(isSel?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"10px 12px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:10,background:isSel?"#E1F5EE":"transparent"}}><div style={{width:32,height:32,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,flexShrink:0}}>{ini(m.name)}</div><div style={{flex:1,fontWeight:700,fontSize:13}}>{m.name}</div>{isSel&&<span style={{color:"#0F6E56",flexShrink:0}}>✓</span>}</div>);})}
+          {drawMode==="live"&&liveModal&&<div style={{background:"#E3F2FD",borderRadius:10,padding:12,textAlign:"center",fontSize:13,color:"#1565C0"}}>📺 رابط القرعة نشط — انظر النافذة المفتوحة</div>}
+
           {pendingWinner&&drawMode!=="live"&&(
-            <div>
-              <div style={{background:"#E1F5EE",border:"2px solid #1D9E75",borderRadius:10,padding:14,margin:"12px 0"}}>
-                <div style={{fontSize:11,color:"#0F6E56",marginBottom:4}}>🏆 الفائز</div>
+            <div style={{marginTop:12}}>
+              <div style={{background:"#E1F5EE",border:"2px solid #1D9E75",borderRadius:10,padding:12,marginBottom:10,textAlign:"center"}}>
+                <div style={{fontSize:11,color:"#0F6E56",marginBottom:3}}>🏆 الفائز</div>
                 <div style={{fontSize:20,fontWeight:800,color:"#085041"}}>{pendingWinner.name}</div>
               </div>
               <button onClick={()=>onConfirm(pendingWinner,drawMode)} style={{width:"100%",padding:11,borderRadius:10,background:"#0F6E56",color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>✅ تأكيد وبدء الجولة التالية</button>
             </div>)}
-          {drawMode==="live"&&liveDraw&&<div style={{background:"#E3F2FD",borderRadius:10,padding:12,fontSize:13,color:"#1565C0",textAlign:"center"}}>📺 القرعة المباشرة نشطة — راجع النافذة المفتوحة</div>}
         </div>
       </div>
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
@@ -644,8 +682,8 @@ function PayTab({state,canWrite,activePayRound,setActivePayRound,onToggle,onPayA
           <div style={{fontSize:12,color:"#5A7A72",marginBottom:14}}>الفائز: <strong>{round.winner_name}</strong> · {round.pays.filter(p=>p.paid).length}/{round.pays.length} دفعوا</div>
           {round.pays.map(pay=>(
             <div key={pay.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #E2EAE7"}}>
-              <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{pay.member_name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{Number(pay.amt).toLocaleString()} ر.س {pay.paid_date?"· "+pay.paid_date:""}</div></div>
-              {canWrite?<button onClick={()=>onToggle(pay.id,pay.paid,pay.member_name,round.round_num,pay.amt)} style={{padding:"6px 16px",borderRadius:8,background:pay.paid?"#E1F5EE":"#FFF3E0",color:pay.paid?"#085041":"#E65100",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{pay.paid?"✓ دفع":"تسجيل الدفع"}</button>:<span style={{fontSize:12,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓ دفع":"⏳"}</span>}
+              <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{pay.member_name}</div><div style={{fontSize:12,color:"#5A7A72"}}>{Number(pay.amt).toLocaleString()} ر.س{pay.paid_date?" · "+pay.paid_date:""}</div></div>
+              {canWrite?<button onClick={()=>onToggle(pay.id,pay.paid,pay.member_name,round.round_num,pay.amt)} style={{padding:"6px 16px",borderRadius:8,background:pay.paid?"#E1F5EE":"#FFF3E0",color:pay.paid?"#085041":"#E65100",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>{pay.paid?"✓ دفع":"تسجيل الدفع"}</button>:<span style={{fontSize:11,padding:"3px 10px",borderRadius:20,fontWeight:700,background:pay.paid?"#E8F5E9":"#FFF3E0",color:pay.paid?"#2E7D32":"#E65100"}}>{pay.paid?"✓":"⏳"}</span>}
             </div>))}
           <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #E2EAE7",display:"flex",justifyContent:"space-between",fontSize:13,color:"#5A7A72"}}>
             <span>إجمالي المحصّل:</span><span style={{fontWeight:700,color:"#0F6E56"}}>{round.pays.filter(p=>p.paid).reduce((s,p)=>s+Number(p.amt),0).toLocaleString()} ر.س</span>
