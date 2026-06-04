@@ -310,13 +310,13 @@ export default function App(){
   const [liveDraw,setLiveDraw]=useState(null);
   const spinRef=useRef(null);
 
-  // كشف الجوال
-  const isMobile=true;
-  const [mobile,setMobile]=useState(isMobile);
-  useEffect(()=>{
-    const h=()=>setMobile(window.innerWidth<900);
-    window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);
-  },[]);
+ // كشف الجوال
+const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
+const [mobile,setMobile]=useState(isMobile);
+useEffect(()=>{
+  const h=()=>setMobile(window.innerWidth<600);
+  window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);
+},[]);
 
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
