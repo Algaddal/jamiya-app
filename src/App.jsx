@@ -339,6 +339,7 @@ export default function App(){
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
+console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRound);
   const curParticipants=state.settings?.current_participants||[];
   const totalPot=curParticipants.reduce((s,mid)=>{const m=state.members.find(x=>x.id===mid);return s+(m?Number(m.amt):0);},0);
   const curPaid=curRound?curRound.pays.filter(p=>p.paid).length:0;
