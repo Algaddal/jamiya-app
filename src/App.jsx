@@ -306,6 +306,12 @@ export default function App(){
     const pObj={};(pays||[]).forEach(p=>{if(!pObj[p.round_id])pObj[p.round_id]=[];pObj[p.round_id].push(p);});
     setState({members:members||[],rounds:(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])})),hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
     setLoading(false);
+    // جلب اسم الجمعية إذا لم يكن selectedGroup محدداً
+if(activeGid&&!selectedGroup){
+  supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
+    if(g)setSelectedGroup(g);
+  });
+}
   }
 
   // ══ يُحدّث gidRef ويستدعي loadAll عند تغيير المستخدم أو الجمعية ══
