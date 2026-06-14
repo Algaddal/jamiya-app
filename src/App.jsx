@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
+import OwnerDashboard from "./OwnerDashboard";
 
 const ini = n => n ? n.trim().split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() : "??";
 const tod = () => new Date().toLocaleDateString("ar-SA");
@@ -396,6 +397,7 @@ export default function App(){
   const [spinDisplay,setSpinDisplay]=useState("");
   const [activePayRound,setActivePayRound]=useState(null);
   const [liveDraw,setLiveDraw]=useState(null);
+  const [selectedGroup,setSelectedGroup]=useState(null); // للمالك عند دخول جمعية
   const spinRef=useRef(null);
 
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
@@ -444,7 +446,7 @@ export default function App(){
   },[currentUser]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
-  const gid=currentUser?.group_id;
+  const gid=selectedGroup?.id || currentUser?.group_id;
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
@@ -580,8 +582,8 @@ export default function App(){
   if(!currentUser)return <LoginScreen onLogin={u=>{setCurrentUser(u);}}/>;
 
   // المالك (superadmin بدون group_id) يرى لوحة تحكم خاصة
-  if(currentUser.role==="superadmin"&&!currentUser.group_id){
-    return <OwnerDashboard onLogout={()=>setCurrentUser(null)}/>;
+  if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
+    return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>setSelectedGroup(g)}/>;
   }
 
   if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
@@ -622,6 +624,7 @@ export default function App(){
           <div style={{marginTop:4}}><span style={{fontSize:10,background:roleInfo.bg,color:roleInfo.color,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{roleInfo.icon} {roleInfo.label}</span></div>
         </div>
         <button onClick={()=>setCurrentUser(null)} style={{width:"100%",background:"rgba(255,100,100,.2)",border:"1px solid rgba(255,100,100,.3)",color:"rgba(255,200,200,.9)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تسجيل الخروج</button>
+        {selectedGroup&&<button onClick={()=>setSelectedGroup(null)} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
       </div>
     </aside>);
 
