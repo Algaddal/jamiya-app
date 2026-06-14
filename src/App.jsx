@@ -331,7 +331,8 @@ async function loadAll(){
   },[currentUser]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
-  const gid=selectedGroup?.id || selectedGroup?.id;
+  const gid=selectedGroup?.id||currentUser?.group_id;
+  gidRef.current=gid;
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
