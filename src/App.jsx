@@ -294,12 +294,12 @@ export default function App(){
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
 
-  useEffect(()=>{loadAll();},[currentUser]);
+  useEffect(()=>{loadAll();},[currentUser, selectedGroup]);
 
   async function loadAll(){
     if(!currentUser)return;
     setLoading(true);
-    const gid=currentUser.group_id;
+    const gid=selectedGroup?.id || currentUser?.group_id;
     // المالك يرى كل شيء، بقية المستخدمين يرون جمعيتهم فقط
     const isOwner=currentUser.role==="superadmin"&&!gid;
     const filter=(q)=>gid?q.eq("group_id",gid):q;
@@ -333,7 +333,7 @@ export default function App(){
   },[currentUser]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
-  const gid=selectedGroup?.id || currentUser?.group_id;
+  const gid=selectedGroup?.id || selectedGroup?.id;
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
