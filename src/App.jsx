@@ -294,7 +294,9 @@ export default function App(){
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
 
-  useEffect(()=>{loadAll();},[currentUser, selectedGroup]);
+  useEffect(()=>{
+  if(currentUser)loadAll();
+},[currentUser,selectedGroup]);
 
 async function loadAll(){
     if(!currentUser)return;
