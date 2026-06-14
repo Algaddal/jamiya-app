@@ -385,7 +385,7 @@ async function loadAll(){
     const parts=eligible.map(mid=>state.members.find(x=>x.id===mid)?.name||"").filter(Boolean);
     // اختيار الفائز من PostgreSQL
     const{data:winMid}=await supabase.rpc("pick_winner",{eligible_ids:eligible});
-    const winner=state.members.find(x=>x.id===winMid);
+const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).single();
     const now=new Date().toISOString();
     const{data:draw}=await supabase.from("live_draw").insert({
       round_num:curRoundNum,status:"waiting",participants:parts,current_name:"",
