@@ -286,7 +286,7 @@ export default function App(){
   const [liveDraw,setLiveDraw]=useState(null);
   const [selectedGroup,setSelectedGroup]=useState(null); // للمالك عند دخول جمعية
   const spinRef=useRef(null);
-
+  const gidRef=useRef(null);
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
   const [mobile,setMobile]=useState(isMobile);
   useEffect(()=>{const h=()=>setMobile(window.innerWidth<600);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
@@ -296,12 +296,11 @@ export default function App(){
 
   useEffect(()=>{loadAll();},[currentUser, selectedGroup]);
 
-  async function loadAll(){
+async function loadAll(){
     if(!currentUser)return;
     setLoading(true);
-    const activeGid=selectedGroup?.id||currentUser?.group_id;
-const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
-
+    const activeGid=gidRef.current;
+    const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
       filter(supabase.from("members").select("*")).order("created_at"),
       filter(supabase.from("rounds").select("*")).order("round_num"),
@@ -319,6 +318,7 @@ const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
   useEffect(()=>{
     if(!currentUser)return;
     const gid=selectedGroup?.id||currentUser?.group_id;
+    gidRef.current=gid;
     const filter=(e)=>gid?{...e,filter:`group_id=eq.${gid}`}:e;
     const ch=supabase.channel("all-"+currentUser.id)
       .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
