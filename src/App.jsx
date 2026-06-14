@@ -299,10 +299,8 @@ export default function App(){
   async function loadAll(){
     if(!currentUser)return;
     setLoading(true);
-    const gid=selectedGroup?.id || currentUser?.group_id;
-    // المالك يرى كل شيء، بقية المستخدمين يرون جمعيتهم فقط
-    const isOwner=currentUser.role==="superadmin"&&!gid;
-    const filter=(q)=>gid?q.eq("group_id",gid):q;
+    const activeGid=selectedGroup?.id||currentUser?.group_id;
+const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
 
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
       filter(supabase.from("members").select("*")).order("created_at"),
