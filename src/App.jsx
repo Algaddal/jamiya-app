@@ -70,8 +70,8 @@ function LiveDrawView(){
     },500);
   }
 
-  if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#1D9E75",fontSize:20}}>جاري التحميل...</div>;
-  if(!draw)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
+  if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#1D9E75",fontSize:20}}>جاري التحميل...</div>;
+  if(!draw)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
 
   const parts=draw.participants||[];
   const isWaiting=draw.status==="waiting";
@@ -87,7 +87,7 @@ function LiveDrawView(){
   const isCritical=timeLeft!==null&&timeLeft<=30&&timeLeft>10;
 
   return(
-    <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a1628,#0F1923,#0a2820)",fontFamily:"Tajawal,sans-serif",padding:"16px 12px"}}>
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a1628,#0F1923,#0a2820)",fontFamily:"Tajawal,sans-serif",padding:"16px 12px"}}>
       <div style={{maxWidth:520,margin:"0 auto"}}>
         <div style={{textAlign:"center",marginBottom:20,paddingTop:8}}>
           <div style={{fontSize:36,marginBottom:6}}>🎰</div>
@@ -160,7 +160,7 @@ function LiveDrawView(){
         </div>
         <div style={{textAlign:"center",marginTop:14,color:"rgba(255,255,255,.12)",fontSize:10}}>الجمعية الدوّارة · رابط ثابت</div>
       </div>
-      <style>{"@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}@keyframes bounce{from{transform:scale(1)}to{transform:scale(1.04)}}@keyframes dot{from{opacity:.3;transform:scale(.8)}to{opacity:1;transform:scale(1.3)}}@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}"}</style>
+      <style>{"@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}@keyframes bounce{from{transform:scale(1)}to{transform:scale(1.04)}}@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}"}</style>
     </div>);
 }
 
@@ -173,11 +173,11 @@ function PublicRoundView(){
     const ch=supabase.channel("pub-"+rid).on("postgres_changes",{event:"*",schema:"public",table:"pays",filter:"round_id=eq."+rid},({new:pay})=>setPays(prev=>{const idx=prev.findIndex(x=>x.id===pay.id);if(idx>=0){const n=[...prev];n[idx]=pay;return n;}return[...prev,pay];})).subscribe();
     return()=>supabase.removeChannel(ch);
   },[rid]);
-  if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
-  if(!round)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
+  if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
+  if(!round)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:"#fff",fontSize:20}}>🔒 رابط غير صحيح</div>;
   const totalPot=pays.reduce((s,p)=>s+Number(p.amt),0),paidCount=pays.filter(p=>p.paid).length;
   return(
-    <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",fontFamily:"Tajawal,sans-serif",padding:"16px 12px"}}>
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",fontFamily:"Tajawal,sans-serif",padding:"16px 12px"}}>
       <div style={{maxWidth:480,margin:"0 auto"}}>
         <div style={{textAlign:"center",marginBottom:24,paddingTop:16}}>
           <div style={{fontSize:40,marginBottom:8}}>🔄</div>
@@ -210,7 +210,7 @@ function LoginScreen({onLogin}){
   const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);
   async function handleLogin(){setLoading(true);setErr("");const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();if(data)onLogin(data);else setErr("رقم الجوال أو الرمز السري غير صحيح");setLoading(false);}
   return(
-    <div dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>🔄</div>
@@ -277,9 +277,7 @@ function TimerSelector({drawId,onSet}){
 
 // ══ BOTTOM NAV (mobile) ══
 function BottomNav({tabs,tab,setTab,setResetModal}){
-  // نعرض أول 5 فقط في الشريط السفلي، والباقي في "المزيد"
   const mainTabs=tabs.slice(0,5);
-  const hasMore=tabs.length>5;
   return(
     <nav style={{position:"fixed",bottom:0,right:0,left:0,background:sf,borderTop:"1px solid "+bd,display:"flex",zIndex:200,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
       {mainTabs.map(t=>(
@@ -310,13 +308,13 @@ export default function App(){
   const [liveDraw,setLiveDraw]=useState(null);
   const spinRef=useRef(null);
 
- // كشف الجوال
-const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
-const [mobile,setMobile]=useState(isMobile);
-useEffect(()=>{
-  const h=()=>setMobile(window.innerWidth<600);
-  window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);
-},[]);
+  // كشف الجوال
+  const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
+  const [mobile,setMobile]=useState(isMobile);
+  useEffect(()=>{
+    const h=()=>setMobile(window.innerWidth<600);
+    window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);
+  },[]);
 
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
@@ -339,20 +337,34 @@ useEffect(()=>{
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
-console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRound);
   const curParticipants=state.settings?.current_participants||[];
   const totalPot=curParticipants.reduce((s,mid)=>{const m=state.members.find(x=>x.id===mid);return s+(m?Number(m.amt):0);},0);
   const curPaid=curRound?curRound.pays.filter(p=>p.paid).length:0;
 
+  // ══ RESET — يستخدم PostgreSQL Functions مع TRUNCATE ══
   async function handleReset(type){
     setResetModal(false);
     try{
-      if(type==="winners")await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");
-      else if(type==="rounds"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");}
-      else if(type==="history")await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
-      else if(type==="members"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");}
-      else if(type==="full"){await supabase.from("pays").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("rounds").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("live_draw").delete().neq("id","00000000-0000-0000-0000-000000000000");await supabase.from("settings").update({value:"1"}).eq("key","current_round");await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");}
-      showToast("✅ تمت العملية بنجاح");loadAll();
+      if(type==="winners"){
+        await supabase.from("members").update({won_round:null}).neq("id","00000000-0000-0000-0000-000000000000");
+      } else if(type==="rounds"){
+        await supabase.rpc("reset_rounds");
+        await supabase.from("settings").update({value:"1"}).eq("key","current_round");
+        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");
+      } else if(type==="history"){
+        await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
+      } else if(type==="members"){
+        await supabase.rpc("reset_all");
+        await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");
+        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");
+      } else if(type==="full"){
+        await supabase.rpc("reset_all");
+        await supabase.from("members").delete().neq("id","00000000-0000-0000-0000-000000000000");
+        await supabase.from("history").delete().neq("id","00000000-0000-0000-0000-000000000000");
+        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants");
+      }
+      showToast("✅ تمت العملية بنجاح");
+      loadAll();
     }catch(e){showToast("خطأ: "+e.message,"error");}
   }
 
@@ -374,23 +386,34 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
     const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     if(!eligible.length){showToast("لا يوجد مشاركون مؤهلون","error");return;}
     const parts=eligible.map(mid=>state.members.find(x=>x.id===mid)?.name||"").filter(Boolean);
+    // ══ تحديد الفائز مسبقاً وتخزينه — الحل الجذري لمشكلة الفائز المزدوج ══
+    const{data:winData}=await supabase.rpc("pick_winner",{eligible_ids:eligible});
+    const winMid=winData;
+    const winner=state.members.find(x=>x.id===winMid);
     const now=new Date().toISOString();
-    const{data:draw}=await supabase.from("live_draw").insert({round_num:curRoundNum,status:"waiting",participants:parts,current_name:"",winner_name:"",is_confirmed:false,countdown_seconds:countdownSec,countdown_start:countdownSec>0?now:null,viewers_count:0}).select().single();
-    setLiveDraw(draw);
+    const{data:draw}=await supabase.from("live_draw").insert({
+      round_num:curRoundNum,
+      status:"waiting",
+      participants:parts,
+      current_name:"",
+      winner_name:winner?.name||"",  // الفائز محدد مسبقاً
+      winner_id:winner?.id||null,    // الفائز محدد مسبقاً
+      is_confirmed:false,
+      countdown_seconds:countdownSec,
+      countdown_start:countdownSec>0?now:null,
+      viewers_count:0
+    }).select().single();
+    setLiveDraw({...draw,_winner:winner}); // نحفظ الفائز محلياً أيضاً
     setLiveModal({drawId:draw.id,shareToken:draw.share_token,countdownSec});
     showToast("📺 تم إنشاء رابط القرعة المباشرة!");
-    if(countdownSec>0){
-      setTimeout(async()=>{
-        const{data:current}=await supabase.from("live_draw").select("status").eq("id",draw.id).single();
-        if(current?.status==="waiting"){document.getElementById("auto-draw-btn-"+draw.id)?.click();}
-      },(countdownSec*1000)+500);
-    }
   }
 
+  // ══ القرعة المباشرة — تدور على الأسماء وتنتهي بالفائز المحدد مسبقاً ══
   async function runLiveDraw(){
     if(!liveDraw)return;
     const parts=liveDraw.participants||[];
-    const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
+    const winner=liveDraw._winner; // الفائز المحدد مسبقاً
+    if(!winner)return;
     await supabase.from("live_draw").update({status:"spinning",updated_at:new Date().toISOString()}).eq("id",liveDraw.id);
     setSpinning(true);setPendingWinner(null);
     let count=0,total=28+Math.floor(Math.random()*12);
@@ -401,12 +424,15 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
       count++;
       if(count>=total){
         clearInterval(interval);
-        const winMid=eligible[Math.floor(Math.random()*eligible.length)];
-        const winner=state.members.find(x=>x.id===winMid);
-        if(winner){
-          await supabase.from("live_draw").update({status:"done",current_name:winner.name,winner_id:winner.id,winner_name:winner.name,updated_at:new Date().toISOString()}).eq("id",liveDraw.id);
-          setSpinning(false);setSpinDisplay(winner.name);setPendingWinner(winner);
-        }
+        // ننهي بالفائز المحدد مسبقاً — نفس الشخص الذي يرى المشاركون
+        await supabase.from("live_draw").update({
+          status:"done",
+          current_name:winner.name,
+          updated_at:new Date().toISOString()
+        }).eq("id",liveDraw.id);
+        setSpinning(false);
+        setSpinDisplay(winner.name);
+        setPendingWinner(winner);
       }
     },150);
     spinRef.current=interval;
@@ -441,19 +467,28 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
   function startLocalDraw(){
     const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     if(!eligible.length){showToast("لا يوجد مشاركون مؤهلون","error");return;}
+    // تحديد الفائز مسبقاً
+    const{data:winData}=await supabase.rpc("pick_winner",{eligible_ids:eligible});
+    const winMid=winData;
+    const winner=state.members.find(x=>x.id===winMid);
     setSpinning(true);setPendingWinner(null);
     let count=0,total=20+Math.floor(Math.random()*15);
     spinRef.current=setInterval(()=>{
       const rid=eligible[Math.floor(Math.random()*eligible.length)];
       const m=state.members.find(x=>x.id===rid);
       setSpinDisplay(m?m.name:"");count++;
-      if(count>=total){clearInterval(spinRef.current);setSpinning(false);const winner=state.members.find(x=>x.id===eligible[Math.floor(Math.random()*eligible.length)]);setPendingWinner(winner);setSpinDisplay(winner?winner.name:"");}
+      if(count>=total){
+        clearInterval(spinRef.current);
+        setSpinning(false);
+        setPendingWinner(winner);
+        setSpinDisplay(winner?winner.name:"");
+      }
     },100);
   }
 
   if(viewType==="live"&&!loading)return <LiveDrawView/>;
   if(viewType==="round"&&!loading)return <PublicRoundView/>;
-  if(loading)return <div style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
+  if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
   if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)}/>;
 
   const isSuperAdmin=currentUser.role==="superadmin";
@@ -472,7 +507,6 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
     {id:"reset",label:"إعادة التعيين",icon:"⚠️",show:isSuperAdmin},
   ].filter(t=>t.show);
 
-  // ── SIDEBAR (desktop) ──
   const Sidebar=(
     <aside style={{width:220,background:G,display:"flex",flexDirection:"column",padding:"20px 0 14px",position:"fixed",right:0,top:0,bottom:0,zIndex:300,boxShadow:"4px 0 20px rgba(0,0,0,.15)",transition:"transform .3s",transform:mobile?(sidebarOpen?"translateX(0)":"translateX(100%)"):"translateX(0)"}}>
       {mobile&&<button onClick={()=>setSidebarOpen(false)} style={{position:"absolute",left:-44,top:16,width:40,height:40,borderRadius:"50% 0 0 50%",background:G,border:"none",cursor:"pointer",color:"#fff",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
@@ -497,14 +531,11 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
     </aside>);
 
   return(
-    <div dir="rtl" style={{minHeight:"100vh",background:bg,fontFamily:"Tajawal,sans-serif",color:"#1A2E28"}}>
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:bg,fontFamily:"Tajawal,sans-serif",color:"#1A2E28"}}>
       {resetModal&&<ResetModal onClose={()=>setResetModal(false)} onReset={handleReset}/>}
-
-      {/* Sidebar overlay on mobile */}
       {mobile&&sidebarOpen&&<div onClick={()=>setSidebarOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:299}}/>}
       {Sidebar}
 
-      {/* LIVE MODAL */}
       {liveModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:999,display:"flex",alignItems:"flex-end",justifyContent:"center",fontFamily:"Tajawal,sans-serif"}} dir="rtl" onClick={e=>{if(e.target===e.currentTarget&&!spinning)setLiveModal(null);}}>
           <div style={{background:sf,borderRadius:"20px 20px 0 0",padding:"20px 20px 32px",width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto"}}>
@@ -552,7 +583,6 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
           </div>
         </div>)}
 
-      {/* SHARE MODAL */}
       {shareModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:998,display:"flex",alignItems:"flex-end",justifyContent:"center"}} dir="rtl" onClick={e=>{if(e.target===e.currentTarget)setShareModal(null);}}>
           <div style={{background:sf,borderRadius:"20px 20px 0 0",padding:"20px 20px 32px",width:"100%",maxWidth:480}}>
@@ -566,10 +596,7 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
           </div>
         </div>)}
 
-      {/* MAIN CONTENT */}
       <div style={{marginRight:mobile?0:220,paddingBottom:mobile?80:0}}>
-
-        {/* MOBILE HEADER */}
         {mobile&&(
           <div style={{background:G,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
             <div>
@@ -587,8 +614,6 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
 
         <main style={{padding:mobile?"12px 14px":"24px 28px"}}>
           {toast&&<div style={{position:"fixed",top:mobile?70:20,left:"50%",transform:"translateX(-50%)",background:toast.type==="error"?"#FCE4EC":GL,color:toast.type==="error"?"#880E4F":GD,padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.15)",whiteSpace:"nowrap"}}>{toast.msg}</div>}
-
-          {/* STATS */}
           <div style={{display:"grid",gridTemplateColumns:mobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:mobile?8:12,marginBottom:mobile?16:24}}>
             {[{label:"إجمالي الأعضاء",val:state.members.length,bg:GL,icon:"👥"},{label:"صندوق الجولة",val:totalPot.toLocaleString()+" ر.س",bg:"#FFF3E0",icon:"💰"},{label:"دفعوا / المشاركون",val:curPaid+"/"+(curRound?curRound.pays.length:0),bg:"#E3F2FD",icon:"✅"},{label:"الجولة الحالية",val:"#"+curRoundNum,bg:"#FCE4EC",icon:"🎯"}].map((k,i)=>(
               <div key={i} style={{background:sf,borderRadius:12,padding:mobile?"12px 14px":"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",display:"flex",alignItems:"center",gap:10}}>
@@ -596,7 +621,6 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
                 <div style={{minWidth:0}}><div style={{fontSize:mobile?16:20,fontWeight:700,lineHeight:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k.val}</div><div style={{fontSize:mobile?10:11,color:"#5A7A72",marginTop:2}}>{k.label}</div></div>
               </div>))}
           </div>
-
           {tab==="members"&&<MembersTab state={state} canWrite={canDo(currentUser,"members_write")} onAdd={addMember} onRemove={removeMember} mobile={mobile}/>}
           {tab==="myinfo"&&<MyInfoTab state={state} currentUser={currentUser} mobile={mobile}/>}
           {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startLocalDraw} onStartLiveDraw={startLiveDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants");}} liveDraw={liveDraw} liveModal={liveModal} mobile={mobile}/>}
@@ -606,10 +630,7 @@ console.log("rounds:",state.rounds,"curRoundNum:",curRoundNum,"curRound:",curRou
           {tab==="users"&&isSuperAdmin&&<UsersTab state={state} currentUser={currentUser} onAdd={addUser} onRemove={removeUser} mobile={mobile}/>}
         </main>
       </div>
-
-      {/* BOTTOM NAV (mobile) */}
       {mobile&&<BottomNav tabs={TABS} tab={tab} setTab={setTab} setResetModal={setResetModal}/>}
-
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}@keyframes bounce{from{transform:scale(1)}to{transform:scale(1.04)}}"}</style>
     </div>);
 }
@@ -691,7 +712,6 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
     <div>
       <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 14px"}}>إعداد الجولة #{curRoundNum}</h2>
       <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:14}}>
-        {/* PARTICIPANTS */}
         <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span>المشاركون</span>
@@ -712,8 +732,6 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
             <span style={{fontWeight:700}}>{totalPot.toLocaleString()} ر.س ({curParticipants.length})</span>
           </div>
         </div>
-
-        {/* DRAW METHOD */}
         <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>طريقة القرعة</div>
           <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:14}}>
@@ -723,7 +741,6 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
                 <div><div>{lb}</div><div style={{fontSize:11,opacity:.7,fontWeight:400,marginTop:1}}>{desc}</div></div>
               </button>))}
           </div>
-
           {drawMode==="random"&&(
             <div style={{textAlign:"center"}}>
               <div onClick={!spinning?onStartDraw:undefined} style={{width:70,height:70,borderRadius:"50%",border:"3px solid #0F6E56",background:"#E1F5EE",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",cursor:spinning?"not-allowed":"pointer",fontSize:28,animation:spinning?"spin .12s linear infinite":"none"}}>🎲</div>
@@ -731,7 +748,6 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
             </div>)}
           {drawMode==="manual"&&eligible.map(mid=>{const m=state.members.find(x=>x.id===mid);if(!m)return null;const ci=state.members.indexOf(m)%6,isSel=pendingWinner?.id===mid;return(<div key={mid} onClick={()=>setPendingWinner(m)} style={{border:"2px solid "+(isSel?"#0F6E56":"#E2EAE7"),borderRadius:8,padding:"9px 11px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:9,background:isSel?"#E1F5EE":"transparent"}}><div style={{width:30,height:30,borderRadius:"50%",background:AVBG[ci][0],color:AVBG[ci][1],display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:11,flexShrink:0}}>{ini(m.name)}</div><div style={{flex:1,fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.name}</div>{isSel&&<span style={{color:"#0F6E56",flexShrink:0}}>✓</span>}</div>);})}
           {drawMode==="live"&&liveModal&&<div style={{background:"#E3F2FD",borderRadius:10,padding:11,textAlign:"center",fontSize:13,color:"#1565C0"}}>📺 رابط القرعة نشط — انظر النافذة المفتوحة</div>}
-
           {pendingWinner&&drawMode!=="live"&&(
             <div style={{marginTop:10}}>
               <div style={{background:"#E1F5EE",border:"2px solid #1D9E75",borderRadius:10,padding:11,marginBottom:9,textAlign:"center"}}>
@@ -790,7 +806,6 @@ function RoundsTab({state,onShare,mobile}){
               </div>
               <div style={{fontSize:13,color:"#5A7A72",marginTop:3}}>🏆 {r.winner_name} · {r.date}</div>
               <div style={{fontSize:12,color:"#8FADA6",marginTop:2}}>{paidCount}/{r.pays.length} دفعوا</div>
-              {/* تفاصيل تظهر inline في الجوال */}
               {mobile&&sel===r.round_num&&(
                 <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #E2EAE7"}}>
                   {r.pays.map(pay=>(
