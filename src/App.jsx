@@ -13,9 +13,6 @@ const canDo=(user,action)=>{const r=user?.role;switch(action){case"reset":return
 function buildShareLink(rid,token){return window.location.href.split("?")[0]+"?view=round&rid="+rid+"&token="+token;}
 function buildLiveLink(drawId,token){return window.location.href.split("?")[0]+"?view=live&did="+drawId+"&token="+token;}
 
-// ══════════════════════════════════════════
-// LIVE DRAW VIEW
-// ══════════════════════════════════════════
 function LiveDrawView(){
   const p=new URLSearchParams(window.location.search);
   const did=p.get("did"),token=p.get("token");
@@ -179,7 +176,6 @@ function PublicRoundView(){
     </div>);
 }
 
-// ══ LOGIN ══
 function LoginScreen({onLogin}){
   const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);
   async function handleLogin(){
@@ -207,7 +203,6 @@ function LoginScreen({onLogin}){
     </div>);
 }
 
-// ══ RESET MODAL ══
 function ResetModal({onClose,onReset}){
   const [selected,setSelected]=useState(null);
   const options=[{id:"winners",label:"إعادة تعيين الفائزين",icon:"🔄",desc:"يمسح won_round فقط",color:"#E3F2FD",tc:"#1565C0"},{id:"rounds",label:"Reset الجولات والمدفوعات",icon:"🗑️",desc:"يحذف الجولات ويبدأ من #1",color:"#FFF3E0",tc:"#E65100"},{id:"history",label:"Reset سجل المعاملات",icon:"📋",desc:"يمسح السجل فقط",color:"#F3E5F5",tc:"#6A1B9A"},{id:"members",label:"Reset الأعضاء",icon:"👥",desc:"يحذف كل الأعضاء",color:"#FCE4EC",tc:"#880E4F"},{id:"full",label:"Reset كامل للجمعية",icon:"⚠️",desc:"يمسح كل شيء",color:"#FFEBEE",tc:"#C62828"}];
@@ -267,7 +262,6 @@ function BottomNav({tabs,tab,setTab,setResetModal}){
     </nav>);
 }
 
-// ══ MAIN APP ══
 export default function App(){
   const [state,setState]=useState({members:[],rounds:[],users:[],hist:[],settings:{current_round:1,current_participants:[]},pays:{}});
   const [currentUser,setCurrentUser]=useState(null);
@@ -284,9 +278,10 @@ export default function App(){
   const [spinDisplay,setSpinDisplay]=useState("");
   const [activePayRound,setActivePayRound]=useState(null);
   const [liveDraw,setLiveDraw]=useState(null);
-  const [selectedGroup,setSelectedGroup]=useState(null); // للمالك عند دخول جمعية
+  const [selectedGroup,setSelectedGroup]=useState(null);
   const spinRef=useRef(null);
   const gidRef=useRef(null);
+
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
   const [mobile,setMobile]=useState(isMobile);
   useEffect(()=>{const h=()=>setMobile(window.innerWidth<600);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
@@ -294,14 +289,10 @@ export default function App(){
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
 
-  useEffect(()=>{
-  if(currentUser)loadAll();
-},[currentUser,selectedGroup]);
-
-async function loadAll(){
+  // ══ الدالة الرئيسية لتحميل البيانات — تأخذ gid صريحاً ══
+  async function loadAll(activeGid){
     if(!currentUser)return;
     setLoading(true);
-    const activeGid=gidRef.current;
     const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
       filter(supabase.from("members").select("*")).order("created_at"),
@@ -317,23 +308,29 @@ async function loadAll(){
     setLoading(false);
   }
 
+  // ══ يُحدّث gidRef ويستدعي loadAll عند تغيير المستخدم أو الجمعية ══
   useEffect(()=>{
-  if(!currentUser)return;
-  const activeGid=selectedGroup?.id||currentUser?.group_id;
-  gidRef.current=activeGid;
-  const ch=supabase.channel("all-"+currentUser.id)
-    .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
-    .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll())
-    .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll())
-    .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll())
-    .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll())
-    .subscribe();
-  return()=>supabase.removeChannel(ch);
-},[currentUser,selectedGroup]);
+    if(!currentUser)return;
+    const activeGid=selectedGroup?.id||currentUser?.group_id||null;
+    gidRef.current=activeGid;
+    loadAll(activeGid);
+  },[currentUser,selectedGroup]);
+
+  // ══ Realtime — يستخدم gidRef.current دائماً ══
+  useEffect(()=>{
+    if(!currentUser)return;
+    const ch=supabase.channel("all-"+currentUser.id)
+      .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll(gidRef.current))
+      .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll(gidRef.current))
+      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll(gidRef.current))
+      .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll(gidRef.current))
+      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll(gidRef.current))
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[currentUser,selectedGroup]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
-  const gid=selectedGroup?.id||currentUser?.group_id;
-  gidRef.current=gid;
+  const gid=gidRef.current;
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
@@ -342,57 +339,46 @@ async function loadAll(){
 
   async function handleReset(type){
     setResetModal(false);
+    const activeGid=gidRef.current;
     try{
-      if(type==="winners"){
-        await supabase.from("members").update({won_round:null}).eq("group_id",gid);
-      } else if(type==="rounds"){
-        await supabase.rpc("reset_rounds");
-        await supabase.from("settings").update({value:"1"}).eq("key","current_round").eq("group_id",gid);
-        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",gid);
-      } else if(type==="history"){
-        await supabase.from("history").delete().eq("group_id",gid);
-      } else if(type==="members"){
-        await supabase.rpc("reset_all");
-        await supabase.from("members").delete().eq("group_id",gid);
-        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",gid);
-      } else if(type==="full"){
-        await supabase.rpc("reset_all");
-        await supabase.from("members").delete().eq("group_id",gid);
-        await supabase.from("history").delete().eq("group_id",gid);
-        await supabase.from("settings").update({value:"1"}).eq("key","current_round").eq("group_id",gid);
-        await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",gid);
-      }
-      showToast("✅ تمت العملية بنجاح");loadAll();
+      if(type==="winners"){await supabase.from("members").update({won_round:null}).eq("group_id",activeGid);}
+      else if(type==="rounds"){await supabase.rpc("reset_rounds");await supabase.from("settings").update({value:"1"}).eq("key","current_round").eq("group_id",activeGid);await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",activeGid);}
+      else if(type==="history"){await supabase.from("history").delete().eq("group_id",activeGid);}
+      else if(type==="members"){await supabase.rpc("reset_all");await supabase.from("members").delete().eq("group_id",activeGid);await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",activeGid);}
+      else if(type==="full"){await supabase.rpc("reset_all");await supabase.from("members").delete().eq("group_id",activeGid);await supabase.from("history").delete().eq("group_id",activeGid);await supabase.from("settings").update({value:"1"}).eq("key","current_round").eq("group_id",activeGid);await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",activeGid);}
+      showToast("✅ تمت العملية بنجاح");loadAll(activeGid);
     }catch(e){showToast("خطأ: "+e.message,"error");}
   }
 
   async function addMember(name,phone,amt){
-    await supabase.from("members").insert({name,phone,amt:Number(amt),group_id:gid});
-    const{data:all}=await supabase.from("members").select("id").eq("group_id",gid);
-    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants").eq("group_id",gid);
-    await supabase.from("history").insert({type:"join",text:"انضم "+name,amt:Number(amt),group_id:gid});
+    const activeGid=gidRef.current;
+    await supabase.from("members").insert({name,phone,amt:Number(amt),group_id:activeGid});
+    const{data:all}=await supabase.from("members").select("id").eq("group_id",activeGid);
+    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants").eq("group_id",activeGid);
+    await supabase.from("history").insert({type:"join",text:"انضم "+name,amt:Number(amt),group_id:activeGid});
     showToast("تم إضافة "+name);
   }
 
   async function removeMember(mid,name){
+    const activeGid=gidRef.current;
     await supabase.from("members").delete().eq("id",mid);
-    await supabase.from("history").insert({type:"leave",text:"غادر "+name,amt:0,group_id:gid});
+    await supabase.from("history").insert({type:"leave",text:"غادر "+name,amt:0,group_id:activeGid});
     showToast("تم الحذف");
   }
 
   async function startLiveDraw(countdownSec=300){
+    const activeGid=gidRef.current;
     const eligible=curParticipants.filter(mid=>{const m=state.members.find(x=>x.id===mid);return m&&!m.won_round;});
     if(!eligible.length){showToast("لا يوجد مشاركون مؤهلون","error");return;}
     const parts=eligible.map(mid=>state.members.find(x=>x.id===mid)?.name||"").filter(Boolean);
-    // اختيار الفائز من PostgreSQL
     const{data:winMid}=await supabase.rpc("pick_winner",{eligible_ids:eligible});
-const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).single();
+    const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).single();
     const now=new Date().toISOString();
     const{data:draw}=await supabase.from("live_draw").insert({
       round_num:curRoundNum,status:"waiting",participants:parts,current_name:"",
       winner_name:winner?.name||"",winner_id:winner?.id||null,
       is_confirmed:false,countdown_seconds:countdownSec,
-      countdown_start:countdownSec>0?now:null,viewers_count:0,group_id:gid
+      countdown_start:countdownSec>0?now:null,viewers_count:0,group_id:activeGid
     }).select().single();
     setLiveDraw({...draw,_winner:winner});
     setLiveModal({drawId:draw.id,shareToken:draw.share_token,countdownSec});
@@ -423,14 +409,16 @@ const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).si
 
   async function confirmWin(winner,method){
     if(!winner)return;
-    const{data:newRound}=await supabase.from("rounds").insert({round_num:curRoundNum,winner_id:winner.id,winner_name:winner.name,draw_method:method,date:tod(),participants:curParticipants,group_id:gid}).select().single();
+    const activeGid=gidRef.current;
+    const{data:newRound}=await supabase.from("rounds").insert({round_num:curRoundNum,winner_id:winner.id,winner_name:winner.name,draw_method:method,date:tod(),participants:curParticipants,group_id:activeGid}).select().single();
+    if(!newRound){showToast("خطأ في تسجيل الجولة","error");return;}
     const payRecs=curParticipants.map(mid=>{const m=state.members.find(x=>x.id===mid);return{round_id:newRound.id,member_id:mid,member_name:m?m.name:"",paid:false,amt:m?Number(m.amt):0};});
     await supabase.from("pays").insert(payRecs);
     await supabase.from("members").update({won_round:curRoundNum}).eq("id",winner.id);
-    const{data:all}=await supabase.from("members").select("id").eq("group_id",gid);
-    await supabase.from("settings").update({value:String(curRoundNum+1)}).eq("key","current_round").eq("group_id",gid);
-    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants").eq("group_id",gid);
-    await supabase.from("history").insert({type:"win",text:"فاز "+winner.name+" بالجولة #"+curRoundNum,amt:totalPot,group_id:gid});
+    const{data:all}=await supabase.from("members").select("id").eq("group_id",activeGid);
+    await supabase.from("settings").update({value:String(curRoundNum+1)}).eq("key","current_round").eq("group_id",activeGid);
+    await supabase.from("settings").update({value:JSON.stringify((all||[]).map(x=>x.id))}).eq("key","current_participants").eq("group_id",activeGid);
+    await supabase.from("history").insert({type:"win",text:"فاز "+winner.name+" بالجولة #"+curRoundNum,amt:totalPot,group_id:activeGid});
     if(liveDraw){await supabase.from("live_draw").update({round_id:newRound.id,is_confirmed:true,status:"done",updated_at:new Date().toISOString()}).eq("id",liveDraw.id);}
     setPendingWinner(null);setSpinDisplay("");
     showToast("🏆 تم تسجيل فوز "+winner.name);
@@ -440,11 +428,12 @@ const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).si
   }
 
   async function togglePay(payId,currentStatus,memberName,roundNum,amt){
+    const activeGid=gidRef.current;
     await supabase.from("pays").update({paid:!currentStatus,paid_date:!currentStatus?tod():null}).eq("id",payId);
-    await supabase.from("history").insert({type:!currentStatus?"pay":"unpay",text:(!currentStatus?"دفع ":"إلغاء دفع ")+memberName+" للجولة #"+roundNum,amt:!currentStatus?amt:0,group_id:gid});
+    await supabase.from("history").insert({type:!currentStatus?"pay":"unpay",text:(!currentStatus?"دفع ":"إلغاء دفع ")+memberName+" للجولة #"+roundNum,amt:!currentStatus?amt:0,group_id:activeGid});
   }
 
-  async function addUser(name,phone,pin,role){await supabase.from("users").insert({name,phone,pin,role,group_id:gid});showToast("تم إضافة "+name);}
+  async function addUser(name,phone,pin,role){const activeGid=gidRef.current;await supabase.from("users").insert({name,phone,pin,role,group_id:activeGid});showToast("تم إضافة "+name);}
   async function removeUser(uid){await supabase.from("users").delete().eq("id",uid);showToast("تم الحذف");}
 
   function startLocalDraw(){
@@ -463,14 +452,12 @@ const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).si
     });
   }
 
-  // ══ ROUTING ══
   if(viewType==="live"&&!loading)return <LiveDrawView/>;
   if(viewType==="round"&&!loading)return <PublicRoundView/>;
   if(!currentUser)return <LoginScreen onLogin={u=>{setCurrentUser(u);}}/>;
 
-  // المالك (superadmin بدون group_id) يرى لوحة تحكم خاصة
   if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
-    return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>setSelectedGroup(g)}/>;
+    return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;setSelectedGroup(g);}}/>;
   }
 
   if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
@@ -511,7 +498,7 @@ const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).si
           <div style={{marginTop:4}}><span style={{fontSize:10,background:roleInfo.bg,color:roleInfo.color,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{roleInfo.icon} {roleInfo.label}</span></div>
         </div>
         <button onClick={()=>setCurrentUser(null)} style={{width:"100%",background:"rgba(255,100,100,.2)",border:"1px solid rgba(255,100,100,.3)",color:"rgba(255,200,200,.9)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تسجيل الخروج</button>
-        {selectedGroup&&<button onClick={()=>setSelectedGroup(null)} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
+        {selectedGroup&&<button onClick={()=>{setSelectedGroup(null);gidRef.current=null;}} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
       </div>
     </aside>);
 
@@ -598,11 +585,11 @@ const{data:winner}=await supabase.from("members").select("*").eq("id",winMid).si
           </div>
           {tab==="members"&&<MembersTab state={state} canWrite={canDo(currentUser,"members_write")} onAdd={addMember} onRemove={removeMember} mobile={mobile}/>}
           {tab==="myinfo"&&<MyInfoTab state={state} currentUser={currentUser} mobile={mobile}/>}
-          {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startLocalDraw} onStartLiveDraw={startLiveDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants").eq("group_id",gid);}} liveDraw={liveDraw} liveModal={liveModal} mobile={mobile}/>}
+          {tab==="newround"&&<NewRoundTab state={state} curRoundNum={curRoundNum} curRound={curRound} curParticipants={curParticipants} totalPot={totalPot} drawMode={drawMode} setDrawMode={setDrawMode} pendingWinner={pendingWinner} setPendingWinner={setPendingWinner} spinning={spinning} spinDisplay={spinDisplay} onStartDraw={startLocalDraw} onStartLiveDraw={startLiveDraw} onConfirm={confirmWin} onUpdateParticipants={async ids=>{await supabase.from("settings").update({value:JSON.stringify(ids)}).eq("key","current_participants").eq("group_id",gidRef.current);}} liveDraw={liveDraw} liveModal={liveModal} mobile={mobile}/>}
           {tab==="pay"&&<PayTab state={state} canWrite={canDo(currentUser,"pays_write")} activePayRound={activePayRound} setActivePayRound={setActivePayRound} onToggle={togglePay} onPayAll={async(roundId,pays)=>{for(const p of pays){if(!p.paid)await supabase.from("pays").update({paid:true,paid_date:tod()}).eq("id",p.id);}showToast("تم تسجيل كل الدفعات");}} mobile={mobile}/>}
           {tab==="rounds"&&<RoundsTab state={state} onShare={r=>setShareModal({roundId:r.id,shareToken:r.share_token})} mobile={mobile}/>}
           {tab==="history"&&<HistoryTab state={state}/>}
-          {(tab==="users")&&<UsersTab state={state} currentUser={currentUser} onAdd={addUser} onRemove={removeUser} mobile={mobile}/>}
+          {tab==="users"&&<UsersTab state={state} currentUser={currentUser} onAdd={addUser} onRemove={removeUser} mobile={mobile}/>}
         </main>
       </div>
       {mobile&&<BottomNav tabs={TABS} tab={tab} setTab={setTab} setResetModal={setResetModal}/>}
