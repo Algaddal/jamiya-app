@@ -318,19 +318,18 @@ async function loadAll(){
   }
 
   useEffect(()=>{
-    if(!currentUser)return;
-    const gid=selectedGroup?.id||currentUser?.group_id;
-    gidRef.current=gid;
-    const filter=(e)=>gid?{...e,filter:`group_id=eq.${gid}`}:e;
-    const ch=supabase.channel("all-"+currentUser.id)
-      .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll())
-      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll())
-      .subscribe();
-    return()=>supabase.removeChannel(ch);
-  },[currentUser]);
+  if(!currentUser)return;
+  const activeGid=selectedGroup?.id||currentUser?.group_id;
+  gidRef.current=activeGid;
+  const ch=supabase.channel("all-"+currentUser.id)
+    .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
+    .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll())
+    .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll())
+    .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll())
+    .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll())
+    .subscribe();
+  return()=>supabase.removeChannel(ch);
+},[currentUser,selectedGroup]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const gid=selectedGroup?.id||currentUser?.group_id;
