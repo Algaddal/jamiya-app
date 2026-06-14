@@ -318,7 +318,7 @@ const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
 
   useEffect(()=>{
     if(!currentUser)return;
-    const gid=currentUser.group_id;
+    const gid=selectedGroup?.id||currentUser?.group_id;
     const filter=(e)=>gid?{...e,filter:`group_id=eq.${gid}`}:e;
     const ch=supabase.channel("all-"+currentUser.id)
       .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll())
