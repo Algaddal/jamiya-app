@@ -302,9 +302,9 @@ export default function App(){
   const urlSlug=slugMatch?slugMatch[1]:null;
 
   // ══ الدالة الرئيسية لتحميل البيانات — تأخذ gid صريحاً ══
-  async function loadAll(activeGid){
+  async function loadAll(activeGid, showLoading=true){
     if(!currentUser)return;
-    setLoading(true);
+    if(showLoading)setLoading(true);
     const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
       filter(supabase.from("members").select("*")).order("created_at"),
@@ -338,11 +338,11 @@ if(activeGid&&!selectedGroup){
   useEffect(()=>{
     if(!currentUser)return;
     const ch=supabase.channel("all-"+currentUser.id)
-      .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll(gidRef.current))
-      .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll(gidRef.current))
-      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll(gidRef.current))
-      .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll(gidRef.current))
-      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll(gidRef.current))
+      .on("postgres_changes",{event:"*",schema:"public",table:"members"},()=>loadAll(gidRef.current,false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"rounds"},()=>loadAll(gidRef.current,false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"pays"},()=>loadAll(gidRef.current,false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"history"},()=>loadAll(gidRef.current,false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll(gidRef.current,false))
       .subscribe();
     return()=>supabase.removeChannel(ch);
   },[currentUser,selectedGroup]);
