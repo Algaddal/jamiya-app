@@ -288,6 +288,7 @@ export default function App(){
   const [activePayRound,setActivePayRound]=useState(null);
   const [liveDraw,setLiveDraw]=useState(null);
   const [selectedGroup,setSelectedGroup]=useState(null);
+const groupNameRef=useRef("");
   const spinRef=useRef(null);
   const gidRef=useRef(null);
   const loadingRef=useRef(false);
@@ -326,11 +327,18 @@ export default function App(){
   gidRef.current=activeGid;
   loadAll(activeGid);
   // جلب اسم الجمعية مرة واحدة فقط
+  useEffect(()=>{
+  if(!currentUser)return;
+  const activeGid=selectedGroup?.id||currentUser?.group_id||null;
+  gidRef.current=activeGid;
+  // جلب اسم الجمعية مرة واحدة
   if(activeGid&&!selectedGroup){
     supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
-      if(g)setSelectedGroup(g);
+      if(g){groupNameRef.current=g.name;}
     });
   }
+  loadAll(activeGid);
+},[currentUser]);
 },[currentUser]);
     setLoading(false);
     loadingRef.current=false;
@@ -511,7 +519,7 @@ export default function App(){
       {mobile&&<button onClick={()=>setSidebarOpen(false)} style={{position:"absolute",left:-44,top:16,width:40,height:40,borderRadius:"50% 0 0 50%",background:G,border:"none",cursor:"pointer",color:"#fff",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
       <div style={{padding:"0 16px 16px",borderBottom:"1px solid rgba(255,255,255,.12)",marginBottom:12}}>
         <div style={{fontSize:24,marginBottom:4}}>🔄</div>
-        <h1 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selectedGroup?.name||"الجمعية الدوّارة"}</h1>
+        <h1 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selectedGroup?.name||groupNameRef.current||"الجمعية الدوّارة"}</h1>
         <p style={{fontSize:11,color:"rgba(255,255,255,.5)",margin:"2px 0 0"}}>إدارة المدخرات الجماعية</p>
       </div>
       <nav style={{flex:1,overflowY:"auto"}}>
@@ -590,7 +598,7 @@ export default function App(){
         {mobile&&(
           <div style={{background:G,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
             <div>
-              <div style={{color:"#fff",fontSize:15,fontWeight:700}}>{selectedGroup?.name||"الجمعية الدوّارة"} 🔄</div>
+              <div style={{color:"#fff",fontSize:15,fontWeight:700}}>{selectedGroup?.name||groupNameRef.current||"الجمعية الدوّارة"} 🔄</div>
               <div style={{color:"rgba(255,255,255,.6)",fontSize:11}}>{TABS.find(t=>t.id===tab)?.label||""}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
