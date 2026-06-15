@@ -748,7 +748,7 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
 function PayTab({state,canWrite,activePayRound,setActivePayRound,onToggle,onPayAll,mobile}){
   const curRoundNum=activePayRound??(state.rounds.length?state.rounds[state.rounds.length-1].round_num:null);
   const round=state.rounds.find(r=>r.round_num===curRoundNum);
-  console.log("DEBUG pays:", state.rounds, round?.pays);
+  
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
