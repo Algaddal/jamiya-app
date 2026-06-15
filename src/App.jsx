@@ -316,7 +316,7 @@ export default function App(){
       filter(supabase.from("rounds").select("*")).order("round_num"),
       filter(supabase.from("history").select("*")).order("created_at",{ascending:false}),
       filter(supabase.from("settings").select("*")),
-      supabase.from("pays").select("*"),
+      filter(supabase.from("pays").select("*")),
       filter(supabase.from("users").select("*"))
     ]);
     const sObj={};(settings||[]).forEach(s=>{try{sObj[s.key]=JSON.parse(s.value);}catch{sObj[s.key]=s.value;}});
