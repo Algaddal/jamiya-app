@@ -474,9 +474,9 @@ export default function App(){
     });
   }
 
-  if(viewType==="live"&&!loading)return <LiveDrawView/>;
-  if(viewType==="round"&&!loading)return <PublicRoundView/>;
-  if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlSlug}/>;
+  if(viewType==="live")return <LiveDrawView/>;
+if(viewType==="round")return <PublicRoundView/>;
+if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlSlug}/>;
 
   if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
     return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;setSelectedGroup(g);}}/>;
