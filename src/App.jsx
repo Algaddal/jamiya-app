@@ -10,8 +10,15 @@ const G="#0F6E56",GM="#1D9E75",GL="#E1F5EE",GD="#085041",sf="#fff",bg="#F5F7F6",
 const ROLES={superadmin:{label:"Super Admin",icon:"👑",color:"#E65100",bg:"#FFF3E0"},admin:{label:"مدير",icon:"🔑",color:"#1565C0",bg:"#E3F2FD"},accountant:{label:"محاسب",icon:"💼",color:"#6A1B9A",bg:"#F3E5F5"},member:{label:"عضو",icon:"👤",color:"#2E7D32",bg:"#E8F5E9"}};
 const canDo=(user,action)=>{const r=user?.role;switch(action){case"reset":return r==="superadmin";case"manage_users":return r==="superadmin";case"rounds":return["superadmin","admin"].includes(r);case"members_write":return["superadmin","admin"].includes(r);case"pays_write":return["superadmin","admin","accountant"].includes(r);default:return false;}};
 
-function buildShareLink(rid,token){return window.location.origin+"?view=round&rid="+rid+"&token="+token;}
-function buildLiveLink(drawId,token){return window.location.origin+"?view=live&did="+drawId+"&token="+token;}
+// روابط المشاركة تحتوي على slug الجمعية إذا كان متاحاً
+function buildShareLink(rid,token,slug){
+  const base=slug?window.location.origin+"/g/"+slug:window.location.origin;
+  return base+"?view=round&rid="+rid+"&token="+token;
+}
+function buildLiveLink(drawId,token,slug){
+  const base=slug?window.location.origin+"/g/"+slug:window.location.origin;
+  return base+"?view=live&did="+drawId+"&token="+token;
+}
 
 function LiveDrawView(){
   const p=new URLSearchParams(window.location.search);
@@ -182,6 +189,15 @@ function LoginScreen({onLogin,urlSlug}){
   const [pin,setPin]=useState("");
   const [err,setErr]=useState("");
   const [loading,setLoading]=useState(false);
+  const [groupName,setGroupName]=useState("");
+
+  useEffect(()=>{
+    if(urlSlug){
+      supabase.from("groups").select("name").eq("slug",urlSlug).single().then(({data})=>{
+        if(data)setGroupName(data.name);
+      });
+    }
+  },[urlSlug]);
 
   async function handleLogin(){
     setLoading(true);setErr("");
@@ -201,10 +217,10 @@ function LoginScreen({onLogin,urlSlug}){
 
   return(
     <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
-      <div style={{width:"100%",maxWidth:380}}>
+      <div style={{width:"100%",maxWidth:420}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>🔄</div>
-          <h1 style={{color:"#fff",fontSize:26,fontWeight:800,margin:0}}> الصندوق الشهري</h1>
+          <h1 style={{color:"#fff",fontSize:26,fontWeight:800,margin:0}}>{groupName||"الصندوق الشهري"}</h1>
           <p style={{color:"rgba(255,255,255,.4)",fontSize:13,marginTop:6}}>إدارة المدخرات الجماعية</p>
         </div>
         <div style={{background:"rgba(255,255,255,.07)",borderRadius:20,padding:24,border:"1px solid rgba(255,255,255,.1)"}}>
@@ -296,6 +312,7 @@ export default function App(){
   const spinRef=useRef(null);
   const gidRef=useRef(null);
   const groupNameRef=useRef("");
+  const groupSlugRef=useRef("");
 
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
   const [mobile,setMobile]=useState(isMobile);
@@ -306,7 +323,6 @@ export default function App(){
   const slugMatch=window.location.pathname.match(/^\/g\/([^/]+)/);
   const urlSlug=slugMatch?slugMatch[1]:null;
 
-  // ══ تحميل البيانات — بدون setLoading في التحديثات التلقائية ══
   async function loadAll(activeGid, showLoading=true){
     if(!currentUser)return;
     if(showLoading)setLoading(true);
@@ -325,21 +341,18 @@ export default function App(){
     if(showLoading)setLoading(false);
   }
 
-  // ══ تحديث gidRef وتحميل البيانات عند تغيير المستخدم فقط ══
   useEffect(()=>{
     if(!currentUser)return;
     const activeGid=selectedGroup?.id||currentUser?.group_id||null;
     gidRef.current=activeGid;
-    // جلب اسم الجمعية مرة واحدة بدون setState
     if(activeGid&&!selectedGroup){
-      supabase.from("groups").select("name").eq("id",activeGid).single().then(({data:g})=>{
-        if(g)groupNameRef.current=g.name;
+      supabase.from("groups").select("name,slug").eq("id",activeGid).single().then(({data:g})=>{
+        if(g){groupNameRef.current=g.name;groupSlugRef.current=g.slug||"";}
       });
     }
     loadAll(activeGid,true);
   },[currentUser?.id,selectedGroup?.id]);
 
-  // ══ Realtime بدون تظليم ══
   useEffect(()=>{
     if(!currentUser)return;
     const ch=supabase.channel("all-"+currentUser.id)
@@ -474,12 +487,15 @@ export default function App(){
     });
   }
 
+  // الـ slug الحالي للجمعية
+  const currentSlug=selectedGroup?.slug||groupSlugRef.current||urlSlug||"";
+
   if(viewType==="live")return <LiveDrawView/>;
-if(viewType==="round")return <PublicRoundView/>;
-if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlSlug}/>;
+  if(viewType==="round")return <PublicRoundView/>;
+  if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlSlug}/>;
 
   if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
-    return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;setSelectedGroup(g);}}/>;
+    return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;groupSlugRef.current=g.slug||"";setSelectedGroup(g);}}/>;
   }
 
   if(loading)return <div translate="no" style={{minHeight:"100vh",background:"#0F1923",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",color:GM,fontSize:20}}>جاري التحميل...</div>;
@@ -521,7 +537,7 @@ if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlS
           <div style={{marginTop:4}}><span style={{fontSize:10,background:roleInfo.bg,color:roleInfo.color,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{roleInfo.icon} {roleInfo.label}</span></div>
         </div>
         <button onClick={()=>setCurrentUser(null)} style={{width:"100%",background:"rgba(255,100,100,.2)",border:"1px solid rgba(255,100,100,.3)",color:"rgba(255,200,200,.9)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تسجيل الخروج</button>
-        {selectedGroup&&<button onClick={()=>{setSelectedGroup(null);gidRef.current=null;groupNameRef.current="";}} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
+        {selectedGroup&&<button onClick={()=>{setSelectedGroup(null);gidRef.current=null;groupNameRef.current="";groupSlugRef.current="";}} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
       </div>
     </aside>);
 
@@ -557,10 +573,10 @@ if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlS
             </div>)}
             {!spinning&&!pendingWinner&&!liveModal.confirmed&&(<div style={{background:"#F0F7FF",borderRadius:10,padding:10,marginBottom:12,textAlign:"center"}}><div style={{fontSize:13,color:"#1565C0"}}>⏳ المشاركون يشاهدون شاشة الانتظار</div></div>)}
             {liveModal.confirmed&&(<div style={{background:GL,borderRadius:10,padding:10,marginBottom:12,textAlign:"center"}}><div style={{fontSize:13,color:G}}>✅ الجولة مؤكدة — المشاركون يرون المدفوعات الآن</div></div>)}
-            <div style={{background:bg,borderRadius:10,padding:"9px 12px",marginBottom:12,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildLiveLink(liveModal.drawId,liveModal.shareToken)}</div>
+            <div style={{background:bg,borderRadius:10,padding:"9px 12px",marginBottom:12,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildLiveLink(liveModal.drawId,liveModal.shareToken,currentSlug)}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              <button onClick={()=>{navigator.clipboard.writeText(buildLiveLink(liveModal.drawId,liveModal.shareToken));showToast("تم نسخ رابط القرعة!");}} style={{padding:10,borderRadius:9,background:"#1565C0",color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
-              <button onClick={()=>window.open(buildLiveLink(liveModal.drawId,liveModal.shareToken),"_blank")} style={{padding:10,borderRadius:9,background:bg,color:"#5A7A72",fontSize:13,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>👁️ معاينة</button>
+              <button onClick={()=>{navigator.clipboard.writeText(buildLiveLink(liveModal.drawId,liveModal.shareToken,currentSlug));showToast("تم نسخ رابط القرعة!");}} style={{padding:10,borderRadius:9,background:"#1565C0",color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
+              <button onClick={()=>window.open(buildLiveLink(liveModal.drawId,liveModal.shareToken,currentSlug),"_blank")} style={{padding:10,borderRadius:9,background:bg,color:"#5A7A72",fontSize:13,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>👁️ معاينة</button>
             </div>
             {!spinning&&!pendingWinner&&!liveModal.confirmed&&(<button onClick={runLiveDraw} style={{width:"100%",padding:13,borderRadius:10,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",color:"#fff",fontSize:15,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginBottom:8}}>🎲 ابدأ القرعة المباشرة</button>)}
             {pendingWinner&&!spinning&&!liveModal.confirmed&&(<button onClick={()=>confirmWin(pendingWinner,"live")} style={{width:"100%",padding:13,borderRadius:10,background:G,color:"#fff",fontSize:15,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif",marginBottom:8}}>✅ تأكيد وتسجيل الجولة</button>)}
@@ -573,9 +589,9 @@ if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlS
           <div style={{background:sf,borderRadius:"20px 20px 0 0",padding:"20px 20px 32px",width:"100%",maxWidth:480}}>
             <div style={{width:40,height:4,borderRadius:2,background:"#E2EAE7",margin:"0 auto 16px"}}/>
             <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:44,marginBottom:8}}>🎉</div><h3 style={{fontSize:17,fontWeight:800,margin:0}}>تم تسجيل الجولة!</h3></div>
-            <div style={{background:bg,borderRadius:10,padding:"10px 12px",marginBottom:14,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildShareLink(shareModal.roundId,shareModal.shareToken)}</div>
+            <div style={{background:bg,borderRadius:10,padding:"10px 12px",marginBottom:14,wordBreak:"break-all",fontSize:11,color:"#5A7A72",border:"1px solid "+bd}}>{buildShareLink(shareModal.roundId,shareModal.shareToken,currentSlug)}</div>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{navigator.clipboard.writeText(buildShareLink(shareModal.roundId,shareModal.shareToken));showToast("تم النسخ!");}} style={{flex:1,padding:12,borderRadius:10,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
+              <button onClick={()=>{navigator.clipboard.writeText(buildShareLink(shareModal.roundId,shareModal.shareToken,currentSlug));showToast("تم النسخ!");}} style={{flex:1,padding:12,borderRadius:10,background:G,color:"#fff",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>📋 نسخ الرابط</button>
               <button onClick={()=>setShareModal(null)} style={{flex:1,padding:12,borderRadius:10,background:bg,color:"#5A7A72",fontSize:14,fontWeight:700,border:"1px solid "+bd,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>إغلاق</button>
             </div>
           </div>
@@ -748,7 +764,6 @@ function NewRoundTab({state,curRoundNum,curRound,curParticipants,totalPot,drawMo
 function PayTab({state,canWrite,activePayRound,setActivePayRound,onToggle,onPayAll,mobile}){
   const curRoundNum=activePayRound??(state.rounds.length?state.rounds[state.rounds.length-1].round_num:null);
   const round=state.rounds.find(r=>r.round_num===curRoundNum);
-  
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
