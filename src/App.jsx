@@ -10,7 +10,6 @@ const G="#0F6E56",GM="#1D9E75",GL="#E1F5EE",GD="#085041",sf="#fff",bg="#F5F7F6",
 const ROLES={superadmin:{label:"Super Admin",icon:"👑",color:"#E65100",bg:"#FFF3E0"},admin:{label:"مدير",icon:"🔑",color:"#1565C0",bg:"#E3F2FD"},accountant:{label:"محاسب",icon:"💼",color:"#6A1B9A",bg:"#F3E5F5"},member:{label:"عضو",icon:"👤",color:"#2E7D32",bg:"#E8F5E9"}};
 const canDo=(user,action)=>{const r=user?.role;switch(action){case"reset":return r==="superadmin";case"manage_users":return r==="superadmin";case"rounds":return["superadmin","admin"].includes(r);case"members_write":return["superadmin","admin"].includes(r);case"pays_write":return["superadmin","admin","accountant"].includes(r);default:return false;}};
 
-// روابط المشاركة تحتوي على slug الجمعية إذا كان متاحاً
 function buildShareLink(rid,token,slug){
   const base=slug?window.location.origin+"/g/"+slug:window.location.origin;
   return base+"?view=round&rid="+rid+"&token="+token;
@@ -183,7 +182,6 @@ function PublicRoundView(){
     </div>);
 }
 
-// ══ LOGIN ══
 function LoginScreen({onLogin,urlSlug}){
   const [phone,setPhone]=useState("");
   const [pin,setPin]=useState("");
@@ -216,7 +214,7 @@ function LoginScreen({onLogin,urlSlug}){
   }
 
   return(
-    <div translate="no" dir="rtl" style={{minHeight:"100vh",width:"100vw",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:"16px"}}
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:"16px"}}>
       <div style={{width:"100%",maxWidth:420}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>🔄</div>
@@ -323,7 +321,7 @@ export default function App(){
   const slugMatch=window.location.pathname.match(/^\/g\/([^/]+)/);
   const urlSlug=slugMatch?slugMatch[1]:null;
 
-  async function loadAll(activeGid, showLoading=true){
+  async function loadAll(activeGid,showLoading=true){
     if(!currentUser)return;
     if(showLoading)setLoading(true);
     const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
@@ -487,7 +485,6 @@ export default function App(){
     });
   }
 
-  // الـ slug الحالي للجمعية
   const currentSlug=selectedGroup?.slug||groupSlugRef.current||urlSlug||"";
 
   if(viewType==="live")return <LiveDrawView/>;
