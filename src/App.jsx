@@ -290,6 +290,7 @@ export default function App(){
   const [selectedGroup,setSelectedGroup]=useState(null);
   const spinRef=useRef(null);
   const gidRef=useRef(null);
+  const loadingRef=useRef(false);
 
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
   const [mobile,setMobile]=useState(isMobile);
@@ -304,6 +305,8 @@ export default function App(){
   // ══ الدالة الرئيسية لتحميل البيانات — تأخذ gid صريحاً ══
   async function loadAll(activeGid, showLoading=true){
     if(!currentUser)return;
+    if(loadingRef.current)return; // منع التحميل المتكرر
+    loadingRef.current=true;
     if(showLoading)setLoading(true);
     const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
@@ -317,13 +320,13 @@ export default function App(){
     const sObj={};(settings||[]).forEach(s=>{try{sObj[s.key]=JSON.parse(s.value);}catch{sObj[s.key]=s.value;}});
     const pObj={};(pays||[]).forEach(p=>{if(!pObj[p.round_id])pObj[p.round_id]=[];pObj[p.round_id].push(p);});
     setState({members:members||[],rounds:(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])})),hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
+    if(activeGid&&!selectedGroup){
+      supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
+        if(g)setSelectedGroup(g);
+      });
+    }
     setLoading(false);
-    // جلب اسم الجمعية إذا لم يكن selectedGroup محدداً
-if(activeGid&&!selectedGroup){
-  supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
-    if(g)setSelectedGroup(g);
-  });
-}
+    loadingRef.current=false;
   }
 
   // ══ يُحدّث gidRef ويستدعي loadAll عند تغيير المستخدم أو الجمعية ══
