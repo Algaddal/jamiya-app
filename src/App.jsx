@@ -176,24 +176,29 @@ function PublicRoundView(){
     </div>);
 }
 
-async function handleLogin(){
-  setLoading(true);setErr("");
-  if(urlSlug){
-    // دخول عبر رابط الجمعية
-    const{data:group}=await supabase.from("groups").select("*").eq("slug",urlSlug).single();
-    if(!group){setErr("رابط الجمعية غير صحيح");setLoading(false);return;}
-    const{data:user}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).eq("group_id",group.id).single();
-    if(user)onLogin(user);
-    else setErr("رقم الجوال أو الرمز السري غير صحيح");
-  } else {
-    // دخول عادي (المالك)
-    const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();
-    if(data)onLogin(data);
-    else setErr("رقم الجوال أو الرمز السري غير صحيح");
+// ══ LOGIN ══
+function LoginScreen({onLogin,urlSlug}){
+  const [phone,setPhone]=useState("");
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  async function handleLogin(){
+    setLoading(true);setErr("");
+    if(urlSlug){
+      const{data:group}=await supabase.from("groups").select("*").eq("slug",urlSlug).single();
+      if(!group){setErr("رابط الجمعية غير صحيح");setLoading(false);return;}
+      const{data:user}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).eq("group_id",group.id).single();
+      if(user)onLogin(user);
+      else setErr("رقم الجوال أو الرمز السري غير صحيح");
+    } else {
+      const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();
+      if(data)onLogin(data);
+      else setErr("رقم الجوال أو الرمز السري غير صحيح");
+    }
+    setLoading(false);
   }
-  setLoading(false);
-}
-  }
+
   return(
     <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
       <div style={{width:"100%",maxWidth:380}}>
@@ -288,10 +293,9 @@ export default function App(){
   const [activePayRound,setActivePayRound]=useState(null);
   const [liveDraw,setLiveDraw]=useState(null);
   const [selectedGroup,setSelectedGroup]=useState(null);
-const groupNameRef=useRef("");
   const spinRef=useRef(null);
   const gidRef=useRef(null);
-  const loadingRef=useRef(false);
+  const groupNameRef=useRef("");
 
   const isMobile=typeof window!=="undefined"&&window.innerWidth<600;
   const [mobile,setMobile]=useState(isMobile);
@@ -299,15 +303,12 @@ const groupNameRef=useRef("");
 
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
-  // قراءة slug من الرابط /g/:slug
   const slugMatch=window.location.pathname.match(/^\/g\/([^/]+)/);
   const urlSlug=slugMatch?slugMatch[1]:null;
 
-  // ══ الدالة الرئيسية لتحميل البيانات — تأخذ gid صريحاً ══
+  // ══ تحميل البيانات — بدون setLoading في التحديثات التلقائية ══
   async function loadAll(activeGid, showLoading=true){
     if(!currentUser)return;
-    if(loadingRef.current)return; // منع التحميل المتكرر
-    loadingRef.current=true;
     if(showLoading)setLoading(true);
     const filter=(q)=>activeGid?q.eq("group_id",activeGid):q;
     const[{data:members},{data:rounds},{data:hist},{data:settings},{data:pays},{data:users}]=await Promise.all([
@@ -321,38 +322,24 @@ const groupNameRef=useRef("");
     const sObj={};(settings||[]).forEach(s=>{try{sObj[s.key]=JSON.parse(s.value);}catch{sObj[s.key]=s.value;}});
     const pObj={};(pays||[]).forEach(p=>{if(!pObj[p.round_id])pObj[p.round_id]=[];pObj[p.round_id].push(p);});
     setState({members:members||[],rounds:(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])})),hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
-    useEffect(()=>{
-  if(!currentUser)return;
-  const activeGid=selectedGroup?.id||currentUser?.group_id||null;
-  gidRef.current=activeGid;
-  loadAll(activeGid);
-  // جلب اسم الجمعية مرة واحدة فقط
-  useEffect(()=>{
-  if(!currentUser)return;
-  const activeGid=selectedGroup?.id||currentUser?.group_id||null;
-  gidRef.current=activeGid;
-  // جلب اسم الجمعية مرة واحدة
-  if(activeGid&&!selectedGroup){
-    supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
-      if(g){groupNameRef.current=g.name;}
-    });
-  }
-  loadAll(activeGid);
-},[currentUser]);
-},[currentUser]);
-    setLoading(false);
-    loadingRef.current=false;
+    if(showLoading)setLoading(false);
   }
 
-  // ══ يُحدّث gidRef ويستدعي loadAll عند تغيير المستخدم أو الجمعية ══
+  // ══ تحديث gidRef وتحميل البيانات عند تغيير المستخدم فقط ══
   useEffect(()=>{
     if(!currentUser)return;
     const activeGid=selectedGroup?.id||currentUser?.group_id||null;
     gidRef.current=activeGid;
-    loadAll(activeGid);
-  },[currentUser,selectedGroup]);
+    // جلب اسم الجمعية مرة واحدة بدون setState
+    if(activeGid&&!selectedGroup){
+      supabase.from("groups").select("name").eq("id",activeGid).single().then(({data:g})=>{
+        if(g)groupNameRef.current=g.name;
+      });
+    }
+    loadAll(activeGid,true);
+  },[currentUser?.id,selectedGroup?.id]);
 
-  // ══ Realtime — يستخدم gidRef.current دائماً ══
+  // ══ Realtime بدون تظليم ══
   useEffect(()=>{
     if(!currentUser)return;
     const ch=supabase.channel("all-"+currentUser.id)
@@ -363,10 +350,9 @@ const groupNameRef=useRef("");
       .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>loadAll(gidRef.current,false))
       .subscribe();
     return()=>supabase.removeChannel(ch);
-  },[currentUser,selectedGroup]);
+  },[currentUser?.id]);
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
-  const gid=gidRef.current;
   const curRoundNum=Number(state.settings?.current_round)||1;
   const curRound=state.rounds.find(r=>r.round_num===curRoundNum);
   const curParticipants=state.settings?.current_participants||[];
@@ -382,7 +368,7 @@ const groupNameRef=useRef("");
       else if(type==="history"){await supabase.from("history").delete().eq("group_id",activeGid);}
       else if(type==="members"){await supabase.rpc("reset_all");await supabase.from("members").delete().eq("group_id",activeGid);await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",activeGid);}
       else if(type==="full"){await supabase.rpc("reset_all");await supabase.from("members").delete().eq("group_id",activeGid);await supabase.from("history").delete().eq("group_id",activeGid);await supabase.from("settings").update({value:"1"}).eq("key","current_round").eq("group_id",activeGid);await supabase.from("settings").update({value:"[]"}).eq("key","current_participants").eq("group_id",activeGid);}
-      showToast("✅ تمت العملية بنجاح");loadAll(activeGid);
+      showToast("✅ تمت العملية بنجاح");loadAll(activeGid,false);
     }catch(e){showToast("خطأ: "+e.message,"error");}
   }
 
@@ -490,7 +476,7 @@ const groupNameRef=useRef("");
 
   if(viewType==="live"&&!loading)return <LiveDrawView/>;
   if(viewType==="round"&&!loading)return <PublicRoundView/>;
-  if(!currentUser)return <LoginScreen onLogin={u=>{setCurrentUser(u);}} urlSlug={urlSlug}/>;
+  if(!currentUser)return <LoginScreen onLogin={u=>setCurrentUser(u)} urlSlug={urlSlug}/>;
 
   if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
     return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;setSelectedGroup(g);}}/>;
@@ -502,6 +488,7 @@ const groupNameRef=useRef("");
   const isAdmin=["superadmin","admin"].includes(currentUser.role);
   const isMember=currentUser.role==="member";
   const roleInfo=ROLES[currentUser.role]||ROLES.member;
+  const groupName=selectedGroup?.name||groupNameRef.current||"الجمعية الدوّارة";
 
   const TABS=[
     {id:"members",label:"الأعضاء",icon:"👥",show:!isMember},
@@ -519,7 +506,7 @@ const groupNameRef=useRef("");
       {mobile&&<button onClick={()=>setSidebarOpen(false)} style={{position:"absolute",left:-44,top:16,width:40,height:40,borderRadius:"50% 0 0 50%",background:G,border:"none",cursor:"pointer",color:"#fff",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
       <div style={{padding:"0 16px 16px",borderBottom:"1px solid rgba(255,255,255,.12)",marginBottom:12}}>
         <div style={{fontSize:24,marginBottom:4}}>🔄</div>
-        <h1 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selectedGroup?.name||groupNameRef.current||"الجمعية الدوّارة"}</h1>
+        <h1 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{groupName}</h1>
         <p style={{fontSize:11,color:"rgba(255,255,255,.5)",margin:"2px 0 0"}}>إدارة المدخرات الجماعية</p>
       </div>
       <nav style={{flex:1,overflowY:"auto"}}>
@@ -534,7 +521,7 @@ const groupNameRef=useRef("");
           <div style={{marginTop:4}}><span style={{fontSize:10,background:roleInfo.bg,color:roleInfo.color,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{roleInfo.icon} {roleInfo.label}</span></div>
         </div>
         <button onClick={()=>setCurrentUser(null)} style={{width:"100%",background:"rgba(255,100,100,.2)",border:"1px solid rgba(255,100,100,.3)",color:"rgba(255,200,200,.9)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>تسجيل الخروج</button>
-        {selectedGroup&&<button onClick={()=>{setSelectedGroup(null);gidRef.current=null;}} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
+        {selectedGroup&&<button onClick={()=>{setSelectedGroup(null);gidRef.current=null;groupNameRef.current="";}} style={{width:"100%",marginTop:6,background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",color:"rgba(255,255,255,.7)",borderRadius:8,padding:"7px 12px",fontSize:12,cursor:"pointer",fontFamily:"Tajawal,sans-serif"}}>← لوحة المالك</button>}
       </div>
     </aside>);
 
@@ -598,7 +585,7 @@ const groupNameRef=useRef("");
         {mobile&&(
           <div style={{background:G,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
             <div>
-              <div style={{color:"#fff",fontSize:15,fontWeight:700}}>{selectedGroup?.name||groupNameRef.current||"الجمعية الدوّارة"} 🔄</div>
+              <div style={{color:"#fff",fontSize:15,fontWeight:700}}>{groupName} 🔄</div>
               <div style={{color:"rgba(255,255,255,.6)",fontSize:11}}>{TABS.find(t=>t.id===tab)?.label||""}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
