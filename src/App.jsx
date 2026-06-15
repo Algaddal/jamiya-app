@@ -216,7 +216,7 @@ function LoginScreen({onLogin,urlSlug}){
   }
 
   return(
-    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
+    <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:"16px"}}
       <div style={{width:"100%",maxWidth:420}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>🔄</div>
