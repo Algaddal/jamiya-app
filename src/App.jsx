@@ -204,7 +204,7 @@ function LoginScreen({onLogin,urlSlug}){
       <div style={{width:"100%",maxWidth:380}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg,#0F6E56,#1D9E75)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>🔄</div>
-          <h1 style={{color:"#fff",fontSize:26,fontWeight:800,margin:0}}>الجمعية الدوّارة</h1>
+          <h1 style={{color:"#fff",fontSize:26,fontWeight:800,margin:0}}> الصندوق الشهري</h1>
           <p style={{color:"rgba(255,255,255,.4)",fontSize:13,marginTop:6}}>إدارة المدخرات الجماعية</p>
         </div>
         <div style={{background:"rgba(255,255,255,.07)",borderRadius:20,padding:24,border:"1px solid rgba(255,255,255,.1)"}}>
