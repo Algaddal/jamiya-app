@@ -320,11 +320,18 @@ export default function App(){
     const sObj={};(settings||[]).forEach(s=>{try{sObj[s.key]=JSON.parse(s.value);}catch{sObj[s.key]=s.value;}});
     const pObj={};(pays||[]).forEach(p=>{if(!pObj[p.round_id])pObj[p.round_id]=[];pObj[p.round_id].push(p);});
     setState({members:members||[],rounds:(rounds||[]).map(r=>({...r,pays:(pObj[r.id]||[])})),hist:hist||[],settings:sObj,pays:pObj,users:users||[]});
-    if(activeGid&&!selectedGroup){
-      supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
-        if(g)setSelectedGroup(g);
-      });
-    }
+    useEffect(()=>{
+  if(!currentUser)return;
+  const activeGid=selectedGroup?.id||currentUser?.group_id||null;
+  gidRef.current=activeGid;
+  loadAll(activeGid);
+  // جلب اسم الجمعية مرة واحدة فقط
+  if(activeGid&&!selectedGroup){
+    supabase.from("groups").select("*").eq("id",activeGid).single().then(({data:g})=>{
+      if(g)setSelectedGroup(g);
+    });
+  }
+},[currentUser]);
     setLoading(false);
     loadingRef.current=false;
   }
