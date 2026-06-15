@@ -176,14 +176,23 @@ function PublicRoundView(){
     </div>);
 }
 
-function LoginScreen({onLogin}){
-  const [phone,setPhone]=useState("");const [pin,setPin]=useState("");const [err,setErr]=useState("");const [loading,setLoading]=useState(false);
-  async function handleLogin(){
-    setLoading(true);setErr("");
+async function handleLogin(){
+  setLoading(true);setErr("");
+  if(urlSlug){
+    // دخول عبر رابط الجمعية
+    const{data:group}=await supabase.from("groups").select("*").eq("slug",urlSlug).single();
+    if(!group){setErr("رابط الجمعية غير صحيح");setLoading(false);return;}
+    const{data:user}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).eq("group_id",group.id).single();
+    if(user)onLogin(user);
+    else setErr("رقم الجوال أو الرمز السري غير صحيح");
+  } else {
+    // دخول عادي (المالك)
     const{data}=await supabase.from("users").select("*").eq("phone",phone).eq("pin",pin).single();
     if(data)onLogin(data);
     else setErr("رقم الجوال أو الرمز السري غير صحيح");
-    setLoading(false);
+  }
+  setLoading(false);
+}
   }
   return(
     <div translate="no" dir="rtl" style={{minHeight:"100vh",background:"linear-gradient(135deg,#0F1923,#1A2E28)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Tajawal,sans-serif",padding:16}}>
@@ -288,6 +297,9 @@ export default function App(){
 
   const shareParams=new URLSearchParams(window.location.search);
   const viewType=shareParams.get("view");
+  // قراءة slug من الرابط /g/:slug
+  const slugMatch=window.location.pathname.match(/^\/g\/([^/]+)/);
+  const urlSlug=slugMatch?slugMatch[1]:null;
 
   // ══ الدالة الرئيسية لتحميل البيانات — تأخذ gid صريحاً ══
   async function loadAll(activeGid){
@@ -460,7 +472,7 @@ if(activeGid&&!selectedGroup){
 
   if(viewType==="live"&&!loading)return <LiveDrawView/>;
   if(viewType==="round"&&!loading)return <PublicRoundView/>;
-  if(!currentUser)return <LoginScreen onLogin={u=>{setCurrentUser(u);}}/>;
+  if(!currentUser)return <LoginScreen onLogin={u=>{setCurrentUser(u);}} urlSlug={urlSlug}/>;
 
   if(currentUser.role==="superadmin"&&!currentUser.group_id&&!selectedGroup){
     return <OwnerDashboard onLogout={()=>setCurrentUser(null)} onEnterGroup={(g)=>{gidRef.current=g.id;setSelectedGroup(g);}}/>;
